@@ -64,7 +64,26 @@ docker build -t audio-video-transcription .
 docker run -p 8000:8000 audio-video-transcription
 ```
 
-### Option 3: Testing Mode (Current Environment)
+### Option 3: Using Docker Compose (Recommended)
+
+```bash
+# Basic setup
+docker-compose up -d
+
+# Development setup with auto-reload
+docker-compose -f docker-compose.dev.yml up -d
+
+# Production setup with nginx and redis
+docker-compose -f docker-compose.prod.yml up -d
+
+# View logs
+docker-compose logs -f transcription-service
+
+# Stop services
+docker-compose down
+```
+
+### Option 4: Testing Mode (Current Environment)
 
 ```bash
 # Install minimal dependencies for testing
@@ -179,6 +198,44 @@ curl -X POST "http://localhost:8000/process-audio" -F "file=@test_audio.wav"
 - `TEMP_DIR`: Temporary file storage directory
 
 ## 🐳 Docker Deployment
+
+### Docker Compose Configurations
+
+#### 1. Basic Setup (`docker-compose.yml`)
+- Single transcription service
+- Basic health checks
+- Suitable for development and simple deployments
+
+#### 2. Development Setup (`docker-compose.dev.yml`)
+- Auto-reload for code changes
+- Source code mounted as volume
+- Test service on port 8001
+- Ideal for development workflow
+
+#### 3. Production Setup (`docker-compose.prod.yml`)
+- Nginx reverse proxy with rate limiting
+- Redis for caching (future use)
+- Resource limits and health checks
+- SSL/HTTPS ready configuration
+- Persistent volumes for models and cache
+
+### Quick Start with Docker Compose
+
+```bash
+# Start basic service
+docker-compose up -d
+
+# Check service health
+curl http://localhost:8000/health
+
+# View logs
+docker-compose logs -f
+
+# Stop service
+docker-compose down
+```
+
+### Manual Docker Commands
 
 ```bash
 # Build and run the transcription service

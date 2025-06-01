@@ -1,0 +1,51 @@
+services:
+  transcription-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: audio-video-transcription-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WHISPER_MODEL=base
+      - SPACY_MODEL=en_core_web_sm
+      - DEBUG=true
+      - RELOAD=true
+    volumes:
+      # Mount source code for development
+      - .:/app
+      - model-cache:/root/.cache
+      - ./temp:/app/temp
+    restart: unless-stopped
+    networks:
+      - transcription-network
+    # Override the default command for development with auto-reload
+    command: uvicorn app:app --host 0.0.0.0 --port 8000 --reload
+
+  # Mock test service for testing without ML dependencies
+  transcription-test:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: audio-video-transcription-test
+    ports:
+      - "8001:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - TEST_MODE=true
+    volumes:
+      - .:/app
+    restart: unless-stopped
+    networks:
+      - transcription-network
+    # Run the test version
+    command: python __test__/test_app.py
+
+networks:
+  transcription-network:
+    driver: bridge
+
+volumes:
+  model-cache:
+    driver: local

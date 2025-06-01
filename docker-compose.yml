@@ -1,0 +1,22 @@
+services:
+  spacy:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: spacy
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - WHISPER_MODEL=base
+      - SPACY_MODEL=en_core_web_sm
+    volumes:
+      - ./model-cache:/root/.cache
+      - ./temp-files:/app/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
