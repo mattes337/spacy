@@ -1,7 +1,7 @@
 import os
 import tempfile
 from typing import List, Dict, Any
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 import uvicorn
 
 app = FastAPI(title="Audio/Video Transcription Service - Test Version")
@@ -20,9 +20,35 @@ class MockTextProcessor:
             f.write("mock audio data")
         return audio_path
 
-    def transcribe_with_whisper(self, audio_path: str) -> str:
-        """Mock transcription"""
-        return "This is a mock transcription of the audio file."
+    def transcribe_with_whisper(self, audio_path: str, language: str = None) -> Dict[str, Any]:
+        """Mock transcription with language detection"""
+        transcript = "This is a mock transcription of the audio file."
+
+        # Mock language detection
+        if language is None:
+            detected_language = "en"
+            language_info = {
+                "detected_language": "en",
+                "language_confidence": 0.95,
+                "language_probabilities": {"en": 0.95, "es": 0.03, "fr": 0.02},
+                "language_source": "auto_detected"
+            }
+        else:
+            language_info = {
+                "detected_language": language,
+                "language_confidence": 1.0,
+                "language_probabilities": {language: 1.0},
+                "language_source": "manually_specified"
+            }
+
+        return {
+            "transcript": transcript,
+            "language_info": language_info,
+            "whisper_result": {
+                "language": language_info["detected_language"],
+                "segments": []
+            }
+        }
 
     def structure_text_with_spacy(self, text: str) -> Dict[str, Any]:
         """Mock text structuring"""
@@ -61,8 +87,11 @@ class MockTextProcessor:
 processor = MockTextProcessor()
 
 @app.post("/process-audio")
-async def process_audio(file: UploadFile = File(...)):
-    """Process audio file and extract structured text"""
+async def process_audio(
+    file: UploadFile = File(...),
+    language: str = Query(None, description="Language code for transcription (e.g., 'en', 'es', 'fr'). If not specified, language will be auto-detected.")
+):
+    """Process audio file and extract structured text with language detection"""
     if not file.filename.lower().endswith(('.wav', '.mp3', '.m4a', '.flac')):
         raise HTTPException(status_code=400, detail="Unsupported audio format")
 
@@ -74,13 +103,17 @@ async def process_audio(file: UploadFile = File(...)):
         tmp_file.flush()
         tmp_file.close()  # Close file before processing
 
-        # Mock transcribe audio
-        transcript = processor.transcribe_with_whisper(tmp_file.name)
+        # Mock transcribe audio with language detection
+        transcription_result = processor.transcribe_with_whisper(tmp_file.name, language=language)
+        transcript = transcription_result["transcript"]
+        language_info = transcription_result["language_info"]
 
         # Mock structure with spaCy
         structured_data = processor.structure_text_with_spacy(transcript)
         structured_data["source_type"] = "audio"
         structured_data["filename"] = file.filename
+        structured_data["language_detection"] = language_info
+        structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
 
         return structured_data
 
@@ -92,8 +125,11 @@ async def process_audio(file: UploadFile = File(...)):
             pass  # Ignore cleanup errors
 
 @app.post("/process-video")
-async def process_video(file: UploadFile = File(...)):
-    """Process video file and extract structured text from audio"""
+async def process_video(
+    file: UploadFile = File(...),
+    language: str = Query(None, description="Language code for transcription (e.g., 'en', 'es', 'fr'). If not specified, language will be auto-detected.")
+):
+    """Process video file and extract structured text from audio with language detection"""
     if not file.filename.lower().endswith(('.mp4', '.avi', '.mov', '.mkv')):
         raise HTTPException(status_code=400, detail="Unsupported video format")
 
@@ -109,13 +145,17 @@ async def process_video(file: UploadFile = File(...)):
         # Mock extract audio from video
         audio_path = processor.extract_audio_from_video(tmp_file.name)
 
-        # Mock transcribe audio
-        transcript = processor.transcribe_with_whisper(audio_path)
+        # Mock transcribe audio with language detection
+        transcription_result = processor.transcribe_with_whisper(audio_path, language=language)
+        transcript = transcription_result["transcript"]
+        language_info = transcription_result["language_info"]
 
         # Mock structure with spaCy
         structured_data = processor.structure_text_with_spacy(transcript)
         structured_data["source_type"] = "video"
         structured_data["filename"] = file.filename
+        structured_data["language_detection"] = language_info
+        structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
 
         return structured_data
 

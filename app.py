@@ -2,7 +2,7 @@ import os
 import tempfile
 import logging
 from typing import List, Dict, Any
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import spacy
 import speech_recognition as sr
@@ -86,14 +86,59 @@ class TextProcessor:
             logger.error(f"Video processing error: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Video processing error: {str(e)}")
 
-    def transcribe_with_whisper(self, audio_path: str) -> str:
-        """Transcribe audio using Whisper"""
+    def transcribe_with_whisper(self, audio_path: str, language: str = None) -> Dict[str, Any]:
+        """Transcribe audio using Whisper with language detection"""
         try:
             logger.info(f"Transcribing audio with Whisper model: {config.WHISPER_MODEL}")
-            result = whisper_model.transcribe(audio_path)
+
+            # Load and preprocess audio for language detection
+            audio = whisper.load_audio(audio_path)
+            audio = whisper.pad_or_trim(audio)
+            mel = whisper.log_mel_spectrogram(audio, n_mels=whisper_model.dims.n_mels).to(whisper_model.device)
+
+            # Detect language if not specified
+            language_info = {}
+            if language is None:
+                logger.info("Detecting language...")
+                _, probs = whisper_model.detect_language(mel)
+                detected_language = max(probs, key=probs.get)
+                language_confidence = probs[detected_language]
+
+                language_info = {
+                    "detected_language": detected_language,
+                    "language_confidence": float(language_confidence),
+                    "language_probabilities": {lang: float(prob) for lang, prob in sorted(probs.items(), key=lambda x: x[1], reverse=True)[:5]},
+                    "language_source": "auto_detected"
+                }
+
+                # Use detected language for transcription
+                transcribe_language = detected_language
+                logger.info(f"Detected language: {detected_language} (confidence: {language_confidence:.3f})")
+            else:
+                language_info = {
+                    "detected_language": language,
+                    "language_confidence": 1.0,
+                    "language_probabilities": {language: 1.0},
+                    "language_source": "manually_specified"
+                }
+                transcribe_language = language
+                logger.info(f"Using manually specified language: {language}")
+
+            # Transcribe with detected or specified language
+            result = whisper_model.transcribe(audio_path, language=transcribe_language)
             transcript = result["text"].strip()
+
             logger.info(f"Transcription completed, length: {len(transcript)} characters")
-            return transcript
+
+            return {
+                "transcript": transcript,
+                "language_info": language_info,
+                "whisper_result": {
+                    "language": result.get("language", transcribe_language),
+                    "segments": result.get("segments", [])
+                }
+            }
+
         except Exception as e:
             logger.error(f"Transcription error: {str(e)}")
             raise HTTPException(status_code=400, detail=f"Transcription error: {str(e)}")
@@ -148,8 +193,11 @@ class TextProcessor:
 processor = TextProcessor()
 
 @app.post("/process-audio")
-async def process_audio(file: UploadFile = File(...)):
-    """Process audio file and extract structured text"""
+async def process_audio(
+    file: UploadFile = File(...),
+    language: str = Query(None, description="Language code for transcription (e.g., 'en', 'es', 'fr'). If not specified, language will be auto-detected.")
+):
+    """Process audio file and extract structured text with language detection"""
     logger.info(f"Processing audio file: {file.filename}")
 
     # Validate file format
@@ -175,14 +223,18 @@ async def process_audio(file: UploadFile = File(...)):
         tmp_file.flush()
         tmp_file.close()  # Close file before processing
 
-        # Transcribe audio
-        transcript = processor.transcribe_with_whisper(tmp_file.name)
+        # Transcribe audio with language detection
+        transcription_result = processor.transcribe_with_whisper(tmp_file.name, language=language)
+        transcript = transcription_result["transcript"]
+        language_info = transcription_result["language_info"]
 
         # Structure with spaCy
         structured_data = processor.structure_text_with_spacy(transcript)
         structured_data["source_type"] = "audio"
         structured_data["filename"] = file.filename
         structured_data["file_size"] = len(content)
+        structured_data["language_detection"] = language_info
+        structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
         structured_data["models_used"] = {
             "whisper": config.WHISPER_MODEL,
             "spacy": config.SPACY_MODEL
@@ -199,8 +251,11 @@ async def process_audio(file: UploadFile = File(...)):
             logger.warning(f"Failed to cleanup temporary file: {tmp_file.name}")
 
 @app.post("/process-video")
-async def process_video(file: UploadFile = File(...)):
-    """Process video file and extract structured text from audio"""
+async def process_video(
+    file: UploadFile = File(...),
+    language: str = Query(None, description="Language code for transcription (e.g., 'en', 'es', 'fr'). If not specified, language will be auto-detected.")
+):
+    """Process video file and extract structured text from audio with language detection"""
     logger.info(f"Processing video file: {file.filename}")
 
     # Validate file format
@@ -230,14 +285,18 @@ async def process_video(file: UploadFile = File(...)):
         # Extract audio from video
         audio_path = processor.extract_audio_from_video(tmp_file.name)
 
-        # Transcribe audio
-        transcript = processor.transcribe_with_whisper(audio_path)
+        # Transcribe audio with language detection
+        transcription_result = processor.transcribe_with_whisper(audio_path, language=language)
+        transcript = transcription_result["transcript"]
+        language_info = transcription_result["language_info"]
 
         # Structure with spaCy
         structured_data = processor.structure_text_with_spacy(transcript)
         structured_data["source_type"] = "video"
         structured_data["filename"] = file.filename
         structured_data["file_size"] = len(content)
+        structured_data["language_detection"] = language_info
+        structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
         structured_data["models_used"] = {
             "whisper": config.WHISPER_MODEL,
             "spacy": config.SPACY_MODEL
