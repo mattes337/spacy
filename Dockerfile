@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Download spaCy model
 RUN python -m spacy download en_core_web_sm
+RUN python -m spacy download de_core_news_sm
 
 # Copy application code
 COPY . .

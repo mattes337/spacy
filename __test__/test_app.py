@@ -4,10 +4,10 @@ from typing import List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, HTTPException
 import uvicorn
 
-app = FastAPI(title="Audio/Video Text Extractor - Test Version")
+app = FastAPI(title="Audio/Video Transcription Service - Test Version")
 
 class MockTextProcessor:
-    """Mock version for testing without heavy dependencies"""
+    """Mock transcription processor for testing agent integration without ML dependencies"""
     
     def __init__(self):
         print("MockTextProcessor initialized")
@@ -137,7 +137,7 @@ async def health_check():
 
 @app.get("/")
 async def root():
-    return {"message": "Audio/Video Text Extractor API", "version": "test", "endpoints": ["/process-audio", "/process-video", "/health"]}
+    return {"message": "Audio/Video Transcription Service API", "version": "test", "mode": "mock", "endpoints": ["/process-audio", "/process-video", "/health"]}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

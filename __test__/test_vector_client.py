@@ -1,13 +1,18 @@
 #!/usr/bin/env python3
 """
-Test script for the VectorDBClient
+Test script for the VectorDBClient data preparation utilities
 """
 
 import json
+import sys
+import os
+
+# Add parent directory to path to import vector_db_client
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from vector_db_client import VectorDBClient
 
 def test_vector_client():
-    """Test the vector database client functionality"""
+    """Test the data preparation utilities for transcription service"""
     
     # Sample structured data from audio processing
     test_data = {
@@ -55,7 +60,7 @@ def test_vector_client():
     documents = client.prepare_for_indexing(test_data)
     
     # Print results
-    print("Vector Database Client Test Results")
+    print("Transcription Data Preparation Test Results")
     print("=" * 50)
     print(f"Input filename: {test_data['filename']}")
     print(f"Source type: {test_data['source_type']}")

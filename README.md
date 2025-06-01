@@ -1,16 +1,23 @@
-# Audio/Video Text Extractor
+# Audio/Video Transcription Service
 
-A FastAPI-based service for extracting and structuring text from audio and video files using Whisper, spaCy, and other ML libraries. Designed for integration with vector databases and agentic coding systems.
+A focused FastAPI-based microservice that transcribes audio and video files and returns structured JSON data. This service is designed to be called by AI agents and other automated systems that need reliable audio/video transcription capabilities.
+
+## 🎯 Service Scope
+
+**This service has ONE focused responsibility:**
+- **Input**: Audio files (.wav, .mp3, .m4a, .flac) or Video files (.mp4, .avi, .mov, .mkv)
+- **Output**: Structured JSON with transcribed text, entities, keywords, and metadata
+- **Usage**: Called by AI agents and automated systems via REST API
 
 ## 🚀 Current Status
 
 ✅ **Working Components:**
-- FastAPI application structure
-- File upload endpoints for audio and video
-- Mock processing pipeline for testing
-- Vector database client for data preparation
-- Docker configuration
-- Comprehensive error handling
+- FastAPI application with transcription endpoints
+- File upload handling for audio and video formats
+- Mock processing pipeline for testing environments
+- Structured JSON output with comprehensive text analysis
+- Docker configuration for containerized deployment
+- Comprehensive error handling and file cleanup
 
 ⚠️ **Known Issues:**
 - ML dependencies (spaCy, Whisper) have installation issues on Python 3.13/Windows
@@ -19,15 +26,16 @@ A FastAPI-based service for extracting and structuring text from audio and video
 ## 📁 Project Structure
 
 ```
-├── app.py                 # Main FastAPI application
-├── test_app.py           # Mock version for testing
-├── vector_db_client.py   # Vector database integration client
-├── test_vector_client.py # Test script for vector client
-├── requirements.txt      # Python dependencies
-├── Dockerfile           # Docker configuration
-├── IMPLEMENTATION.md    # Detailed implementation guide
-├── TASKS.md            # TODOs and missing features
-└── README.md           # This file
+├── app.py                    # Main FastAPI transcription service
+├── vector_db_client.py      # Data preparation utilities
+├── requirements.txt         # Python dependencies
+├── Dockerfile              # Docker configuration
+├── IMPLEMENTATION.md       # Detailed implementation guide
+├── TASKS.md               # Development tasks and roadmap
+├── README.md              # This file
+└── __test__/              # Test files and mock implementations
+    ├── test_app.py        # Mock version for testing
+    └── test_vector_client.py # Test script for data preparation
 ```
 
 ## 🛠️ Installation
@@ -50,10 +58,10 @@ python -m spacy download en_core_web_sm
 
 ```bash
 # Build the Docker image
-docker build -t audio-video-indexer .
+docker build -t audio-video-transcription .
 
 # Run the container
-docker run -p 8000:8000 audio-video-indexer
+docker run -p 8000:8000 audio-video-transcription
 ```
 
 ### Option 3: Testing Mode (Current Environment)
@@ -63,26 +71,26 @@ docker run -p 8000:8000 audio-video-indexer
 pip install fastapi uvicorn python-multipart
 
 # Run the mock version
-python test_app.py
+python __test__/test_app.py
 ```
 
 ## 🚀 Usage
 
-### Starting the Server
+### Starting the Transcription Service
 
 ```bash
 # Production version (requires ML dependencies)
 python app.py
 
 # Test version (mock processing)
-python test_app.py
+python __test__/test_app.py
 ```
 
-The server will start on `http://localhost:8000`
+The service will start on `http://localhost:8000` and be ready to receive transcription requests from agents.
 
-### API Endpoints
+### API Endpoints for Agent Integration
 
-#### Process Audio File
+#### Transcribe Audio File
 ```bash
 curl -X POST "http://localhost:8000/process-audio" \
      -H "accept: application/json" \
@@ -90,7 +98,7 @@ curl -X POST "http://localhost:8000/process-audio" \
      -F "file=@your_audio.wav"
 ```
 
-#### Process Video File
+#### Transcribe Video File (extracts audio first)
 ```bash
 curl -X POST "http://localhost:8000/process-video" \
      -H "accept: application/json" \
@@ -98,17 +106,19 @@ curl -X POST "http://localhost:8000/process-video" \
      -F "file=@your_video.mp4"
 ```
 
-#### Health Check
+#### Service Health Check
 ```bash
 curl http://localhost:8000/health
 ```
 
-### Response Format
+### Structured JSON Response
+
+The service returns comprehensive structured data that agents can easily process:
 
 ```json
 {
-  "raw_text": "Transcribed text from audio/video",
-  "sentences": ["Sentence 1", "Sentence 2"],
+  "raw_text": "Complete transcribed text from audio/video",
+  "sentences": ["Sentence 1", "Sentence 2", "..."],
   "entities": [
     {
       "text": "Entity text",
@@ -140,15 +150,15 @@ curl http://localhost:8000/health
 
 ## 🧪 Testing
 
-### Test Vector Database Client
+### Test Data Preparation Utilities
 ```bash
-python test_vector_client.py
+python __test__/test_vector_client.py
 ```
 
-### Test API Endpoints
+### Test Transcription API
 ```bash
 # Start test server
-python test_app.py
+python __test__/test_app.py
 
 # In another terminal, test endpoints
 curl http://localhost:8000/health
@@ -171,44 +181,47 @@ curl -X POST "http://localhost:8000/process-audio" -F "file=@test_audio.wav"
 ## 🐳 Docker Deployment
 
 ```bash
-# Build and run
-docker build -t audio-video-indexer .
-docker run -p 8000:8000 audio-video-indexer
+# Build and run the transcription service
+docker build -t audio-video-transcription .
+docker run -p 8000:8000 audio-video-transcription
 
-# With environment variables
-docker run -p 8000:8000 -e WHISPER_MODEL=small audio-video-indexer
+# With environment variables for model configuration
+docker run -p 8000:8000 -e WHISPER_MODEL=small audio-video-transcription
 ```
 
-## 🔗 Vector Database Integration
+## 🔗 Agent Integration
 
-The `VectorDBClient` prepares structured data for vector database indexing:
+The service is designed for seamless integration with AI agents:
 
 ```python
-from vector_db_client import VectorDBClient
+import requests
 
-client = VectorDBClient()
-documents = client.prepare_for_indexing(structured_data)
+# Agent calls the transcription service
+response = requests.post(
+    "http://localhost:8000/process-audio",
+    files={"file": open("audio.wav", "rb")}
+)
 
-# Documents are ready for indexing in your vector database
-# Each document has: id, text, metadata
+structured_data = response.json()
+# Agent can now process the structured transcription data
 ```
 
-## 📋 Next Steps
+## 📋 Development Roadmap
 
-See `TASKS.md` for detailed TODOs and missing features.
+See `TASKS.md` for detailed development tasks and priorities.
 
-**High Priority:**
-1. Fix dependency compatibility issues
-2. Implement real model loading
-3. Add comprehensive error handling
-4. Optimize performance for large files
+**High Priority for Transcription Service:**
+1. Fix dependency compatibility issues (Python 3.9-3.11)
+2. Implement robust model loading and caching
+3. Optimize transcription accuracy and performance
+4. Add comprehensive error handling for agent integration
 
 ## 🤝 Contributing
 
-1. Check `TASKS.md` for open tasks
-2. Test with Python 3.9-3.11 environment
-3. Ensure all tests pass before submitting changes
-4. Update documentation as needed
+1. Check `TASKS.md` for transcription service development tasks
+2. Test with Python 3.9-3.11 environment for ML dependencies
+3. Ensure transcription accuracy and API reliability
+4. Update documentation to reflect service scope
 
 ## 📄 License
 
@@ -216,19 +229,23 @@ See `TASKS.md` for detailed TODOs and missing features.
 
 ## 🆘 Troubleshooting
 
-### Common Issues
+### Common Transcription Service Issues
 
-1. **Dependency installation fails**
+1. **ML dependency installation fails**
    - Use Python 3.9-3.11 instead of 3.13
    - Consider using conda for ML packages
+   - Use Docker for consistent environment
 
 2. **File permission errors on Windows**
    - Fixed in current version with proper file cleanup
+   - Ensure temp directory has write permissions
 
-3. **Models not loading**
+3. **Transcription models not loading**
    - Ensure spaCy model is downloaded: `python -m spacy download en_core_web_sm`
    - Check internet connection for Whisper model download
+   - Verify model files are accessible
 
-4. **Large file processing fails**
+4. **Large audio/video file processing fails**
    - Implement chunking for large files (see TASKS.md)
-   - Increase timeout settings
+   - Increase timeout settings for agent requests
+   - Monitor memory usage during transcription
