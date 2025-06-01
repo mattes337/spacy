@@ -43,6 +43,11 @@ class Config:
     
     # Test Mode
     TEST_MODE: bool = os.getenv("TEST_MODE", "false").lower() == "true"
+
+    # Topic Segmentation Configuration
+    TOPIC_SIMILARITY_THRESHOLD: float = float(os.getenv("TOPIC_SIMILARITY_THRESHOLD", "0.75"))
+    MIN_TOPIC_SENTENCES: int = int(os.getenv("MIN_TOPIC_SENTENCES", "2"))
+    ENABLE_TOPIC_SEGMENTATION: bool = os.getenv("ENABLE_TOPIC_SEGMENTATION", "true").lower() == "true"
     
     @classmethod
     def get_max_file_size_bytes(cls) -> int:
@@ -95,6 +100,9 @@ class Config:
         print(f"DEBUG: {cls.DEBUG}")
         print(f"TEST_MODE: {cls.TEST_MODE}")
         print(f"LOG_LEVEL: {cls.LOG_LEVEL}")
+        print(f"ENABLE_TOPIC_SEGMENTATION: {cls.ENABLE_TOPIC_SEGMENTATION}")
+        print(f"TOPIC_SIMILARITY_THRESHOLD: {cls.TOPIC_SIMILARITY_THRESHOLD}")
+        print(f"MIN_TOPIC_SENTENCES: {cls.MIN_TOPIC_SENTENCES}")
         print("=" * 45)
 
 

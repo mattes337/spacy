@@ -10,6 +10,8 @@ from pydub import AudioSegment
 from moviepy.editor import VideoFileClip
 import whisper
 import uvicorn
+import numpy as np
+from sklearn.metrics.pairwise import cosine_similarity
 
 from config import config
 
@@ -151,7 +153,197 @@ class TextProcessor:
                 detail=f"File size ({file_size} bytes) exceeds maximum allowed size ({config.MAX_FILE_SIZE})"
             )
 
-    def structure_text_with_spacy(self, text: str) -> Dict[str, Any]:
+    def segment_text_by_topic_with_timing(self, text: str, whisper_segments: List[Dict]) -> List[Dict[str, Any]]:
+        """Segment text into topics with timing information and summaries"""
+        if not config.ENABLE_TOPIC_SEGMENTATION:
+            # Return single topic with all content
+            return [{
+                "summary": "",  # Will be filled by LLM later
+                "seconds": 0.0,
+                "sentences": [text] if text.strip() else []
+            }]
+
+        try:
+            doc = nlp(text)
+            sentences = list(doc.sents)
+
+            # If we have fewer sentences than minimum, return as single topic
+            if len(sentences) < config.MIN_TOPIC_SENTENCES:
+                return [{
+                    "summary": "",  # Will be filled by LLM later
+                    "seconds": 0.0,
+                    "sentences": [sent.text.strip() for sent in sentences]
+                }]
+
+            # Map sentences to timing information from Whisper segments
+            sentence_timings = self._map_sentences_to_timing(sentences, whisper_segments)
+
+            # Check if the spaCy model has word vectors
+            if not nlp.meta.get('vectors', {}).get('keys', 0):
+                logger.warning("spaCy model doesn't have word vectors. Using fallback topic segmentation.")
+                return self._fallback_topic_segmentation_with_timing(sentences, sentence_timings)
+
+            # Calculate sentence embeddings using spaCy
+            sentence_vectors = []
+            valid_sentences = []
+            valid_timings = []
+
+            for i, sent in enumerate(sentences):
+                if sent.vector.any():  # Check if sentence has a valid vector
+                    sentence_vectors.append(sent.vector)
+                    valid_sentences.append(sent)
+                    valid_timings.append(sentence_timings[i])
+
+            if len(sentence_vectors) < 2:
+                return [{
+                    "summary": "",  # Will be filled by LLM later
+                    "seconds": 0.0,
+                    "sentences": [sent.text.strip() for sent in sentences]
+                }]
+
+            # Convert to numpy array for sklearn
+            sentence_vectors = np.array(sentence_vectors)
+
+            # Calculate cosine similarities between consecutive sentences
+            topic_segments = []
+            current_segment = {
+                "sentences": [valid_sentences[0]],
+                "start_time": valid_timings[0]
+            }
+
+            for i in range(1, len(valid_sentences)):
+                # Calculate similarity between consecutive sentences
+                similarity = cosine_similarity(
+                    sentence_vectors[i-1].reshape(1, -1),
+                    sentence_vectors[i].reshape(1, -1)
+                )[0][0]
+
+                if similarity > config.TOPIC_SIMILARITY_THRESHOLD:
+                    current_segment["sentences"].append(valid_sentences[i])
+                else:
+                    # Topic change detected
+                    if len(current_segment["sentences"]) >= config.MIN_TOPIC_SENTENCES:
+                        topic_segments.append(current_segment)
+                    else:
+                        # If segment is too short, merge with previous
+                        if topic_segments:
+                            topic_segments[-1]["sentences"].extend(current_segment["sentences"])
+                        else:
+                            # Start new segment anyway if it's the first one
+                            topic_segments.append(current_segment)
+
+                    current_segment = {
+                        "sentences": [valid_sentences[i]],
+                        "start_time": valid_timings[i]
+                    }
+
+            # Add the last segment
+            if current_segment["sentences"]:
+                if len(current_segment["sentences"]) >= config.MIN_TOPIC_SENTENCES or not topic_segments:
+                    topic_segments.append(current_segment)
+                else:
+                    # Merge short final segment with previous
+                    if topic_segments:
+                        topic_segments[-1]["sentences"].extend(current_segment["sentences"])
+                    else:
+                        topic_segments.append(current_segment)
+
+            # Ensure we have at least one segment
+            if not topic_segments:
+                topic_segments = [{
+                    "sentences": sentences,
+                    "start_time": 0.0
+                }]
+
+            # Convert to final format with summaries
+            topics = []
+            for segment in topic_segments:
+                sentences_text = [sent.text.strip() for sent in segment["sentences"]]
+                topic_text = " ".join(sentences_text)
+
+                topics.append({
+                    "summary": "",  # Will be filled by LLM later
+                    "seconds": float(segment["start_time"]),
+                    "sentences": sentences_text
+                })
+
+            logger.info(f"Topic segmentation completed: {len(topics)} topics identified")
+            return topics
+
+        except Exception as e:
+            logger.error(f"Topic segmentation error: {str(e)}")
+            return [{
+                "summary": "",  # Will be filled by LLM later
+                "seconds": 0.0,
+                "sentences": [text] if text.strip() else []
+            }]
+
+    def _map_sentences_to_timing(self, sentences: List, whisper_segments: List[Dict]) -> List[float]:
+        """Map sentences to timing information from Whisper segments"""
+        sentence_timings = []
+
+        if not whisper_segments:
+            # No timing information available, use default
+            return [0.0] * len(sentences)
+
+        # Create a mapping of text to timing
+        segment_text_to_time = {}
+        for segment in whisper_segments:
+            if 'text' in segment and 'start' in segment:
+                segment_text_to_time[segment['text'].strip()] = segment['start']
+
+        # Try to match sentences to segments
+        for sentence in sentences:
+            sentence_text = sentence.text.strip()
+            best_match_time = 0.0
+
+            # Look for exact or partial matches
+            for segment_text, start_time in segment_text_to_time.items():
+                if sentence_text in segment_text or segment_text in sentence_text:
+                    best_match_time = start_time
+                    break
+
+            sentence_timings.append(best_match_time)
+
+        return sentence_timings
+
+    def _fallback_topic_segmentation_with_timing(self, sentences: List, sentence_timings: List[float]) -> List[Dict[str, Any]]:
+        """Fallback topic segmentation with timing information"""
+        chunk_size = max(config.MIN_TOPIC_SENTENCES, len(sentences) // 3)
+        topics = []
+
+        for i in range(0, len(sentences), chunk_size):
+            chunk = sentences[i:i + chunk_size]
+            chunk_timings = sentence_timings[i:i + chunk_size]
+
+            sentences_text = [sent.text.strip() for sent in chunk]
+            start_time = chunk_timings[0] if chunk_timings else 0.0
+
+            topics.append({
+                "summary": "",  # Will be filled by LLM later
+                "seconds": float(start_time),
+                "sentences": sentences_text
+            })
+
+        return topics if topics else [{
+            "summary": "",  # Will be filled by LLM later
+            "seconds": 0.0,
+            "sentences": [sent.text.strip() for sent in sentences]
+        }]
+
+    def _fallback_topic_segmentation(self, sentences: List) -> List[str]:
+        """Fallback topic segmentation based on sentence count"""
+        # Simple fallback: split into chunks of sentences
+        chunk_size = max(config.MIN_TOPIC_SENTENCES, len(sentences) // 3)
+        segments = []
+
+        for i in range(0, len(sentences), chunk_size):
+            chunk = sentences[i:i + chunk_size]
+            segments.append(" ".join([sent.text.strip() for sent in chunk]))
+
+        return segments if segments else [" ".join([sent.text.strip() for sent in sentences])]
+
+    def structure_text_with_spacy(self, text: str, whisper_segments: List[Dict] = None) -> Dict[str, Any]:
         """Process text with spaCy for structured extraction"""
         doc = nlp(text)
 
@@ -187,6 +379,14 @@ class TextProcessor:
                 "unique_entities": len(set([ent.label_ for ent in doc.ents]))
             }
         }
+
+        # Add topic segmentation with timing
+        if whisper_segments is None:
+            whisper_segments = []
+
+        topics = self.segment_text_by_topic_with_timing(text, whisper_segments)
+        structured_data["topics"] = topics
+        structured_data["summary_stats"]["topics_count"] = len(topics)
 
         return structured_data
 
@@ -229,7 +429,7 @@ async def process_audio(
         language_info = transcription_result["language_info"]
 
         # Structure with spaCy
-        structured_data = processor.structure_text_with_spacy(transcript)
+        structured_data = processor.structure_text_with_spacy(transcript, transcription_result["whisper_result"]["segments"])
         structured_data["source_type"] = "audio"
         structured_data["filename"] = file.filename
         structured_data["file_size"] = len(content)
@@ -291,7 +491,7 @@ async def process_video(
         language_info = transcription_result["language_info"]
 
         # Structure with spaCy
-        structured_data = processor.structure_text_with_spacy(transcript)
+        structured_data = processor.structure_text_with_spacy(transcript, transcription_result["whisper_result"]["segments"])
         structured_data["source_type"] = "video"
         structured_data["filename"] = file.filename
         structured_data["file_size"] = len(content)
@@ -329,7 +529,12 @@ async def health_check():
             "max_file_size": config.MAX_FILE_SIZE,
             "supported_audio_formats": config.get_supported_audio_formats(),
             "supported_video_formats": config.get_supported_video_formats(),
-            "test_mode": config.TEST_MODE
+            "test_mode": config.TEST_MODE,
+            "topic_segmentation": {
+                "enabled": config.ENABLE_TOPIC_SEGMENTATION,
+                "similarity_threshold": config.TOPIC_SIMILARITY_THRESHOLD,
+                "min_topic_sentences": config.MIN_TOPIC_SENTENCES
+            }
         }
     }
 
@@ -362,6 +567,11 @@ async def get_config():
         "supported_formats": {
             "audio": config.get_supported_audio_formats(),
             "video": config.get_supported_video_formats()
+        },
+        "topic_segmentation": {
+            "enabled": config.ENABLE_TOPIC_SEGMENTATION,
+            "similarity_threshold": config.TOPIC_SIMILARITY_THRESHOLD,
+            "min_topic_sentences": config.MIN_TOPIC_SENTENCES
         }
     }
 

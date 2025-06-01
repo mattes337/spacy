@@ -53,6 +53,30 @@ class MockTextProcessor:
     def structure_text_with_spacy(self, text: str) -> Dict[str, Any]:
         """Mock text structuring"""
         words = text.split()
+
+        # Mock topic segmentation - split text into 2-3 topics for testing
+        sentences = text.split('. ')
+        if len(sentences) > 3:
+            mid = len(sentences) // 2
+            topics = [
+                {
+                    "summary": "",
+                    "seconds": 0.0,
+                    "sentences": ['. '.join(sentences[:mid]) + '.']
+                },
+                {
+                    "summary": "",
+                    "seconds": 30.0,
+                    "sentences": ['. '.join(sentences[mid:]) + '.']
+                }
+            ]
+        else:
+            topics = [{
+                "summary": "",
+                "seconds": 0.0,
+                "sentences": [text]
+            }]
+
         structured_data = {
             "raw_text": text,
             "sentences": [text],  # Mock: treat entire text as one sentence
@@ -75,11 +99,13 @@ class MockTextProcessor:
                 for word in words if len(word) > 2
             ],
             "noun_phrases": ["mock transcription", "audio file"],
+            "topics": topics,
             "summary_stats": {
                 "total_tokens": len(words),
                 "sentences_count": 1,
                 "entities_count": 1,
-                "unique_entities": 1
+                "unique_entities": 1,
+                "topics_count": len(topics)
             }
         }
         return structured_data

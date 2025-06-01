@@ -156,11 +156,29 @@ The service returns comprehensive structured data that agents can easily process
     }
   ],
   "noun_phrases": ["noun phrase 1", "noun phrase 2"],
+  "topics": [
+    {
+      "summary": "",
+      "seconds": 0.0,
+      "sentences": ["First sentence of topic.", "Second sentence of topic."]
+    },
+    {
+      "summary": "",
+      "seconds": 45.2,
+      "sentences": ["First sentence of second topic.", "Another sentence."]
+    },
+    {
+      "summary": "",
+      "seconds": 120.8,
+      "sentences": ["Final topic sentences here."]
+    }
+  ],
   "summary_stats": {
     "total_tokens": 50,
     "sentences_count": 2,
     "entities_count": 1,
-    "unique_entities": 1
+    "unique_entities": 1,
+    "topics_count": 3
   },
   "source_type": "audio",
   "filename": "your_audio.wav"
@@ -191,11 +209,20 @@ curl -X POST "http://localhost:8000/process-audio" -F "file=@test_audio.wav"
 **Audio:** `.wav`, `.mp3`, `.m4a`, `.flac`
 **Video:** `.mp4`, `.avi`, `.mov`, `.mkv`
 
-### Environment Variables (Future)
+### Environment Variables
+
+#### Core Configuration
 - `WHISPER_MODEL`: Whisper model size (base, small, medium, large)
-- `SPACY_MODEL`: spaCy model name
+- `SPACY_MODEL`: spaCy model name (requires word vectors for topic segmentation)
 - `MAX_FILE_SIZE`: Maximum upload file size
 - `TEMP_DIR`: Temporary file storage directory
+
+#### Topic Segmentation Configuration
+- `ENABLE_TOPIC_SEGMENTATION`: Enable/disable topic segmentation (default: true)
+- `TOPIC_SIMILARITY_THRESHOLD`: Similarity threshold for topic boundaries (default: 0.75)
+- `MIN_TOPIC_SENTENCES`: Minimum sentences per topic (default: 2)
+
+**Note:** For optimal topic segmentation, use spaCy models with word vectors like `en_core_web_md` or `en_core_web_lg` instead of `en_core_web_sm`.
 
 ## 🐳 Docker Deployment
 
