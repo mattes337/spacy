@@ -517,6 +517,44 @@ async def process_video(
             except (OSError, PermissionError):
                 logger.warning(f"Failed to cleanup temporary audio file: {audio_path}")
 
+@app.post("/process")
+async def process_file(
+    file: UploadFile = File(...),
+    language: str = Query(None, description="Language code for transcription (e.g., 'en', 'es', 'fr'). If not specified, language will be auto-detected.")
+):
+    """Process audio or video file and extract structured text with automatic format detection"""
+    logger.info(f"Processing file: {file.filename}")
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No filename provided")
+
+    # Get supported formats
+    audio_formats = config.get_supported_audio_formats()
+    video_formats = config.get_supported_video_formats()
+
+    # Check if file is audio or video
+    filename_lower = file.filename.lower()
+    is_audio = any(filename_lower.endswith(fmt) for fmt in audio_formats)
+    is_video = any(filename_lower.endswith(fmt) for fmt in video_formats)
+
+    if is_audio:
+        logger.info(f"Detected audio file: {file.filename}")
+        # Reset file position since we need to read it again
+        await file.seek(0)
+        return await process_audio(file, language)
+    elif is_video:
+        logger.info(f"Detected video file: {file.filename}")
+        # Reset file position since we need to read it again
+        await file.seek(0)
+        return await process_video(file, language)
+    else:
+        # Unsupported format
+        all_formats = audio_formats + video_formats
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file format. Supported formats: {', '.join(sorted(all_formats))}"
+        )
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint with configuration information"""
@@ -548,6 +586,7 @@ async def root():
         "endpoints": [
             "/health",
             "/config",
+            "/process",
             "/process-audio",
             "/process-video"
         ],
