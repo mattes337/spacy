@@ -274,6 +274,22 @@ async def health_check():
         }
     }
 
+@app.get("/")
+async def root():
+    """Root endpoint with service information"""
+    return {
+        "message": "Audio/Video Transcription Service API",
+        "version": "1.0.0",
+        "status": "running",
+        "endpoints": [
+            "/health",
+            "/config",
+            "/process-audio",
+            "/process-video"
+        ],
+        "documentation": "/docs"
+    }
+
 @app.get("/config")
 async def get_config():
     """Get current service configuration"""
@@ -302,11 +318,20 @@ if __name__ == "__main__":
             log_level=config.LOG_LEVEL.lower()
         )
     else:
-        # For production
-        uvicorn.run(
-            app,
-            host=config.HOST,
-            port=config.PORT,
-            log_level=config.LOG_LEVEL.lower(),
-            workers=config.MAX_WORKERS
-        )
+        # For production - use import string to enable workers
+        if config.MAX_WORKERS > 1:
+            uvicorn.run(
+                "app:app",  # Use import string for workers
+                host=config.HOST,
+                port=config.PORT,
+                log_level=config.LOG_LEVEL.lower(),
+                workers=config.MAX_WORKERS
+            )
+        else:
+            # Single worker mode
+            uvicorn.run(
+                app,
+                host=config.HOST,
+                port=config.PORT,
+                log_level=config.LOG_LEVEL.lower()
+            )

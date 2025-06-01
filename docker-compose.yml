@@ -1,9 +1,9 @@
 services:
-  spacy:
+  transcription-service:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: spacy
+    container_name: audio-video-transcription
     ports:
       - "8000:8000"
     environment:
@@ -14,13 +14,24 @@ services:
       - TEMP_DIR=/app/temp
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DEBUG=${DEBUG:-false}
+      - MAX_WORKERS=1
     volumes:
       - ./model-cache:/root/.cache
       - ./temp-files:/app/temp
     restart: unless-stopped
+    networks:
+      - transcription-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 60s
+
+networks:
+  transcription-network:
+    driver: bridge
+
+volumes:
+  model-cache:
+    driver: local
