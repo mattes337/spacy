@@ -63,16 +63,17 @@ CMD ["python", "app.py"]
 This file lists the Python dependencies required for the transcription service:
 
 ```txt
-spacy==3.7.2
-speechrecognition==3.10.0
+spacy==3.8.2
+speechrecognition==3.14.3
 pydub==0.25.1
-moviepy==1.0.3
-whisper-openai==20231117
-torch==2.1.0
-torchaudio==2.1.0
-fastapi==0.104.1
-uvicorn==0.24.0
-numpy==1.24.3
+moviepy==2.2.1
+openai-whisper==20240930
+torch==2.7.0
+torchaudio==2.7.0
+fastapi==0.115.12
+uvicorn==0.34.2
+numpy==2.1.3
+python-multipart==0.0.20
 ```
 
 -   `spacy`: Natural language processing for text analysis and entity extraction
@@ -254,7 +255,6 @@ This utility prepares the structured transcription data for further processing b
 
 import json
 from typing import List, Dict, Any
-import numpy as np
 
 class VectorDBClient:
     """Example client for vector database integration"""
