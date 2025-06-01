@@ -8,8 +8,12 @@ services:
       - "8000:8000"
     environment:
       - PYTHONUNBUFFERED=1
-      - WHISPER_MODEL=base
-      - SPACY_MODEL=en_core_web_sm
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - SPACY_MODEL=${SPACY_MODEL:-en_core_web_sm}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-100MB}
+      - TEMP_DIR=/app/temp
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      - DEBUG=${DEBUG:-false}
     volumes:
       - ./model-cache:/root/.cache
       - ./temp-files:/app/temp
