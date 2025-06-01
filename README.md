@@ -21,7 +21,7 @@ A focused FastAPI-based microservice that transcribes audio and video files and 
 
 ⚠️ **Known Issues:**
 - ML dependencies (spaCy, Whisper) have installation issues on Python 3.13/Windows
-- Requires Python 3.9-3.11 for full functionality
+- Requires Python 3.10-3.11 for full functionality (updated for compatibility)
 
 ## 📁 Project Structure
 
@@ -40,11 +40,11 @@ A focused FastAPI-based microservice that transcribes audio and video files and 
 
 ## 🛠️ Installation
 
-### Option 1: Using Python 3.9-3.11 (Recommended)
+### Option 1: Using Python 3.10-3.11 (Recommended)
 
 ```bash
-# Create virtual environment with Python 3.9-3.11
-python3.9 -m venv venv
+# Create virtual environment with Python 3.10-3.11
+python3.10 -m venv venv
 source venv/bin/activate  # On Windows: venv\Scripts\activate
 
 # Install dependencies
@@ -211,7 +211,7 @@ structured_data = response.json()
 See `TASKS.md` for detailed development tasks and priorities.
 
 **High Priority for Transcription Service:**
-1. Fix dependency compatibility issues (Python 3.9-3.11)
+1. ✅ Fixed dependency compatibility issues (Python 3.10-3.11)
 2. Implement robust model loading and caching
 3. Optimize transcription accuracy and performance
 4. Add comprehensive error handling for agent integration
@@ -219,7 +219,7 @@ See `TASKS.md` for detailed development tasks and priorities.
 ## 🤝 Contributing
 
 1. Check `TASKS.md` for transcription service development tasks
-2. Test with Python 3.9-3.11 environment for ML dependencies
+2. Test with Python 3.10-3.11 environment for ML dependencies
 3. Ensure transcription accuracy and API reliability
 4. Update documentation to reflect service scope
 

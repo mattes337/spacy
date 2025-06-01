@@ -1,11 +1,11 @@
 spacy==3.8.2
 speechrecognition==3.14.3
 pydub==0.25.1
-moviepy==2.2.1
+moviepy==1.0.3
 openai-whisper==20240930
-torch==2.7.0
-torchaudio==2.7.0
+torch==2.4.1
+torchaudio==2.4.1
 fastapi==0.115.12
 uvicorn==0.34.2
-numpy==2.1.3
+numpy==1.26.4
 python-multipart==0.0.20

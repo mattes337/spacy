@@ -49,7 +49,7 @@ EXPOSE 8000
 CMD ["python", "app.py"]
 ```
 
--   Starts from a slim Python 3.9 image for ML compatibility
+-   Starts from a slim Python 3.10 image for ML compatibility
 -   Installs `ffmpeg` and `libsndfile1` for audio/video transcription processing
 -   Sets the working directory to `/app` for the transcription service
 -   Installs Python dependencies required for transcription (spaCy, Whisper, etc.)
@@ -66,13 +66,13 @@ This file lists the Python dependencies required for the transcription service:
 spacy==3.8.2
 speechrecognition==3.14.3
 pydub==0.25.1
-moviepy==2.2.1
+moviepy==1.0.3
 openai-whisper==20240930
-torch==2.7.0
-torchaudio==2.7.0
+torch==2.4.1
+torchaudio==2.4.1
 fastapi==0.115.12
 uvicorn==0.34.2
-numpy==2.1.3
+numpy==1.26.4
 python-multipart==0.0.20
 ```
 
