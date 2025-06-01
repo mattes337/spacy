@@ -2,82 +2,63 @@ import os
 import tempfile
 from typing import List, Dict, Any
 from fastapi import FastAPI, UploadFile, File, HTTPException
-import spacy
-import speech_recognition as sr
-from pydub import AudioSegment
-from moviepy.editor import VideoFileClip
-import whisper
 import uvicorn
 
-app = FastAPI(title="Audio/Video Text Extractor")
+app = FastAPI(title="Audio/Video Text Extractor - Test Version")
 
-# Load models
-nlp = spacy.load("en_core_web_sm")
-whisper_model = whisper.load_model("base")
-
-class TextProcessor:
+class MockTextProcessor:
+    """Mock version for testing without heavy dependencies"""
+    
     def __init__(self):
-        self.recognizer = sr.Recognizer()
+        print("MockTextProcessor initialized")
 
     def extract_audio_from_video(self, video_path: str) -> str:
-        """Extract audio from video file"""
-        try:
-            video = VideoFileClip(video_path)
-            audio_path = video_path.replace('.mp4', '.wav').replace('.avi', '.wav')
-            video.audio.write_audiofile(audio_path, verbose=False, logger=None)
-            video.close()
-            return audio_path
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Video processing error: {str(e)}")
+        """Mock audio extraction"""
+        audio_path = video_path.replace('.mp4', '.wav').replace('.avi', '.wav')
+        # Create a dummy audio file for testing
+        with open(audio_path, 'w') as f:
+            f.write("mock audio data")
+        return audio_path
 
     def transcribe_with_whisper(self, audio_path: str) -> str:
-        """Transcribe audio using Whisper"""
-        try:
-            result = whisper_model.transcribe(audio_path)
-            return result["text"]
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Transcription error: {str(e)}")
+        """Mock transcription"""
+        return "This is a mock transcription of the audio file."
 
     def structure_text_with_spacy(self, text: str) -> Dict[str, Any]:
-        """Process text with spaCy for structured extraction"""
-        doc = nlp(text)
-
-        # Extract structured information
+        """Mock text structuring"""
+        words = text.split()
         structured_data = {
             "raw_text": text,
-            "sentences": [sent.text.strip() for sent in doc.sents],
+            "sentences": [text],  # Mock: treat entire text as one sentence
             "entities": [
                 {
-                    "text": ent.text,
-                    "label": ent.label_,
-                    "description": spacy.explain(ent.label_),
-                    "start": ent.start_char,
-                    "end": ent.end_char
+                    "text": "mock",
+                    "label": "MISC",
+                    "description": "Miscellaneous entities",
+                    "start": 0,
+                    "end": 4
                 }
-                for ent in doc.ents
             ],
             "keywords": [
                 {
-                    "text": token.text,
-                    "lemma": token.lemma_,
-                    "pos": token.pos_,
-                    "is_stop": token.is_stop
+                    "text": word,
+                    "lemma": word.lower(),
+                    "pos": "NOUN",
+                    "is_stop": False
                 }
-                for token in doc
-                if not token.is_stop and not token.is_punct and len(token.text) > 2
+                for word in words if len(word) > 2
             ],
-            "noun_phrases": [chunk.text for chunk in doc.noun_chunks],
+            "noun_phrases": ["mock transcription", "audio file"],
             "summary_stats": {
-                "total_tokens": len(doc),
-                "sentences_count": len(list(doc.sents)),
-                "entities_count": len(doc.ents),
-                "unique_entities": len(set([ent.label_ for ent in doc.ents]))
+                "total_tokens": len(words),
+                "sentences_count": 1,
+                "entities_count": 1,
+                "unique_entities": 1
             }
         }
-
         return structured_data
 
-processor = TextProcessor()
+processor = MockTextProcessor()
 
 @app.post("/process-audio")
 async def process_audio(file: UploadFile = File(...)):
@@ -93,10 +74,10 @@ async def process_audio(file: UploadFile = File(...)):
         tmp_file.flush()
         tmp_file.close()  # Close file before processing
 
-        # Transcribe audio
+        # Mock transcribe audio
         transcript = processor.transcribe_with_whisper(tmp_file.name)
 
-        # Structure with spaCy
+        # Mock structure with spaCy
         structured_data = processor.structure_text_with_spacy(transcript)
         structured_data["source_type"] = "audio"
         structured_data["filename"] = file.filename
@@ -125,13 +106,13 @@ async def process_video(file: UploadFile = File(...)):
         tmp_file.flush()
         tmp_file.close()  # Close file before processing
 
-        # Extract audio from video
+        # Mock extract audio from video
         audio_path = processor.extract_audio_from_video(tmp_file.name)
 
-        # Transcribe audio
+        # Mock transcribe audio
         transcript = processor.transcribe_with_whisper(audio_path)
 
-        # Structure with spaCy
+        # Mock structure with spaCy
         structured_data = processor.structure_text_with_spacy(transcript)
         structured_data["source_type"] = "video"
         structured_data["filename"] = file.filename
@@ -152,7 +133,11 @@ async def process_video(file: UploadFile = File(...)):
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "models_loaded": True}
+    return {"status": "healthy", "models_loaded": False, "mode": "mock"}
+
+@app.get("/")
+async def root():
+    return {"message": "Audio/Video Text Extractor API", "version": "test", "endpoints": ["/process-audio", "/process-video", "/health"]}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)

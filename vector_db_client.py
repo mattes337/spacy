@@ -1,6 +1,5 @@
 import json
 from typing import List, Dict, Any
-import numpy as np
 
 class VectorDBClient:
     """Example client for vector database integration"""
