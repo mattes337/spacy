@@ -10,14 +10,19 @@ services:
       - PYTHONUNBUFFERED=1
       - WHISPER_MODEL=${WHISPER_MODEL:-base}
       - SPACY_MODEL=${SPACY_MODEL:-en_core_web_sm}
-      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-100MB}
+      - MAX_FILE_SIZE=${MAX_FILE_SIZE:-2GB}
       - TEMP_DIR=/app/temp
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DEBUG=${DEBUG:-false}
-      - MAX_WORKERS=1
+      - MAX_WORKERS=4
+      - MAX_CONCURRENT_JOBS=4
+      - DATABASE_PATH=/app/data/transcription_jobs.db
+      - WEBHOOK_TIMEOUT=30
+      - WEBHOOK_MAX_RETRIES=3
     volumes:
       - ./model-cache:/root/.cache
       - ./temp-files:/app/temp
+      - ./data:/app/data
     restart: unless-stopped
     networks:
       - transcription-network

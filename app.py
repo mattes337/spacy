@@ -1,9 +1,11 @@
 import os
 import tempfile
 import logging
-from typing import List, Dict, Any
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query
+import asyncio
+from typing import List, Dict, Any, Optional
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Form
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 import spacy
 import speech_recognition as sr
 from pydub import AudioSegment
@@ -14,6 +16,8 @@ import numpy as np
 from sklearn.metrics.pairwise import cosine_similarity
 
 from config import config
+from models import DatabaseManager, JobStatus
+from background_processor import BackgroundProcessor
 
 # Setup logging
 logging.basicConfig(
@@ -63,6 +67,10 @@ try:
 except Exception as e:
     logger.error(f"Failed to load Whisper model {config.WHISPER_MODEL}: {e}")
     raise
+
+# Initialize database manager
+logger.info("Initializing database manager")
+db_manager = DatabaseManager(config.DATABASE_PATH)
 
 class TextProcessor:
     def __init__(self):
@@ -392,6 +400,10 @@ class TextProcessor:
 
 processor = TextProcessor()
 
+# Initialize background processor
+logger.info("Initializing background processor")
+background_processor = BackgroundProcessor(processor, db_manager)
+
 @app.post("/process-audio")
 async def process_audio(
     file: UploadFile = File(...),
@@ -520,9 +532,10 @@ async def process_video(
 @app.post("/process")
 async def process_file(
     file: UploadFile = File(...),
-    language: str = Query(None, description="Language code for transcription (e.g., 'en', 'es', 'fr'). If not specified, language will be auto-detected.")
+    language: str = Query(None, description="Language code for transcription (e.g., 'en', 'es', 'fr'). If not specified, language will be auto-detected."),
+    webhook_url: str = Query(None, description="Optional webhook URL to call when processing is complete")
 ):
-    """Process audio or video file and extract structured text with automatic format detection"""
+    """Process audio or video file asynchronously and return job ID"""
     logger.info(f"Processing file: {file.filename}")
 
     if not file.filename:
@@ -538,15 +551,11 @@ async def process_file(
     is_video = any(filename_lower.endswith(fmt) for fmt in video_formats)
 
     if is_audio:
-        logger.info(f"Detected audio file: {file.filename}")
-        # Reset file position since we need to read it again
-        await file.seek(0)
-        return await process_audio(file, language)
+        file_type = "audio"
+        file_extension = next(fmt for fmt in audio_formats if filename_lower.endswith(fmt))
     elif is_video:
-        logger.info(f"Detected video file: {file.filename}")
-        # Reset file position since we need to read it again
-        await file.seek(0)
-        return await process_video(file, language)
+        file_type = "video"
+        file_extension = next(fmt for fmt in video_formats if filename_lower.endswith(fmt))
     else:
         # Unsupported format
         all_formats = audio_formats + video_formats
@@ -555,16 +564,117 @@ async def process_file(
             detail=f"Unsupported file format. Supported formats: {', '.join(sorted(all_formats))}"
         )
 
+    # Read file content and validate size
+    content = await file.read()
+    processor.validate_file_size(len(content))
+
+    # Create job in database
+    job = db_manager.create_job(
+        filename=file.filename,
+        file_size=len(content),
+        file_type=file_type,
+        language=language,
+        webhook_url=webhook_url
+    )
+
+    # Start background processing
+    asyncio.create_task(
+        background_processor.process_job_async(
+            job.id,
+            content,
+            file_extension
+        )
+    )
+
+    logger.info(f"Job {job.id} created for file: {file.filename}")
+
+    return {
+        "job_id": job.id,
+        "status": "pending",
+        "message": "File uploaded successfully. Processing started.",
+        "filename": file.filename,
+        "file_size": len(content),
+        "file_type": file_type,
+        "created_at": job.created_at.isoformat()
+    }
+
+@app.get("/status/{job_id}")
+async def get_job_status(job_id: str):
+    """Get the status of a processing job"""
+    job = db_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    return job.to_status_dict()
+
+@app.get("/result/{job_id}")
+async def get_job_result(job_id: str):
+    """Get the result of a completed processing job"""
+    job = db_manager.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    if job.status == JobStatus.PENDING.value:
+        return JSONResponse(
+            status_code=202,
+            content={
+                "job_id": job_id,
+                "status": "pending",
+                "message": "Job is still pending processing"
+            }
+        )
+    elif job.status == JobStatus.PROCESSING.value:
+        return JSONResponse(
+            status_code=202,
+            content={
+                "job_id": job_id,
+                "status": "processing",
+                "progress_percentage": job.progress_percentage,
+                "current_step": job.current_step,
+                "message": "Job is currently being processed"
+            }
+        )
+    elif job.status == JobStatus.FAILED.value:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "job_id": job_id,
+                "status": "failed",
+                "error_message": job.error_message,
+                "message": "Job processing failed"
+            }
+        )
+    elif job.status == JobStatus.COMPLETED.value:
+        if not job.result:
+            raise HTTPException(status_code=500, detail="Job completed but no result found")
+
+        return {
+            "job_id": job_id,
+            "status": "completed",
+            "completed_at": job.completed_at.isoformat() if job.completed_at else None,
+            "result": job.result
+        }
+    else:
+        raise HTTPException(status_code=500, detail="Unknown job status")
+
+@app.get("/jobs/processing")
+async def get_processing_status():
+    """Get current processing status and active jobs"""
+    return background_processor.get_processing_status()
+
 @app.get("/health")
 async def health_check():
     """Health check endpoint with configuration information"""
     return {
         "status": "healthy",
         "models_loaded": True,
+        "database_connected": True,
+        "background_processor": background_processor.get_processing_status(),
         "configuration": {
             "whisper_model": config.WHISPER_MODEL,
             "spacy_model": config.SPACY_MODEL,
             "max_file_size": config.MAX_FILE_SIZE,
+            "max_concurrent_jobs": config.MAX_CONCURRENT_JOBS,
             "supported_audio_formats": config.get_supported_audio_formats(),
             "supported_video_formats": config.get_supported_video_formats(),
             "test_mode": config.TEST_MODE,
@@ -572,6 +682,11 @@ async def health_check():
                 "enabled": config.ENABLE_TOPIC_SEGMENTATION,
                 "similarity_threshold": config.TOPIC_SIMILARITY_THRESHOLD,
                 "min_topic_sentences": config.MIN_TOPIC_SENTENCES
+            },
+            "webhook_settings": {
+                "timeout": config.WEBHOOK_TIMEOUT,
+                "max_retries": config.WEBHOOK_MAX_RETRIES,
+                "retry_delay": config.WEBHOOK_RETRY_DELAY
             }
         }
     }
@@ -587,6 +702,9 @@ async def root():
             "/health",
             "/config",
             "/process",
+            "/status/{job_id}",
+            "/result/{job_id}",
+            "/jobs/processing",
             "/process-audio",
             "/process-video"
         ],

@@ -38,9 +38,15 @@ class Config:
     WHISPER_CACHE_DIR: str = os.getenv("WHISPER_CACHE_DIR", "/root/.cache/whisper")
     SPACY_CACHE_DIR: str = os.getenv("SPACY_CACHE_DIR", "/root/.cache/spacy")
     
-    # Redis Configuration (for production)
-    REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
-    
+    # Async Processing Configuration
+    DATABASE_PATH: str = os.getenv("DATABASE_PATH", "./transcription_jobs.db")
+    MAX_CONCURRENT_JOBS: int = int(os.getenv("MAX_CONCURRENT_JOBS", "4"))
+
+    # Webhook Configuration
+    WEBHOOK_TIMEOUT: int = int(os.getenv("WEBHOOK_TIMEOUT", "30"))
+    WEBHOOK_MAX_RETRIES: int = int(os.getenv("WEBHOOK_MAX_RETRIES", "3"))
+    WEBHOOK_RETRY_DELAY: int = int(os.getenv("WEBHOOK_RETRY_DELAY", "5"))
+
     # Test Mode
     TEST_MODE: bool = os.getenv("TEST_MODE", "false").lower() == "true"
 
@@ -100,6 +106,10 @@ class Config:
         print(f"DEBUG: {cls.DEBUG}")
         print(f"TEST_MODE: {cls.TEST_MODE}")
         print(f"LOG_LEVEL: {cls.LOG_LEVEL}")
+        print(f"DATABASE_PATH: {cls.DATABASE_PATH}")
+        print(f"MAX_CONCURRENT_JOBS: {cls.MAX_CONCURRENT_JOBS}")
+        print(f"WEBHOOK_TIMEOUT: {cls.WEBHOOK_TIMEOUT}")
+        print(f"WEBHOOK_MAX_RETRIES: {cls.WEBHOOK_MAX_RETRIES}")
         print(f"ENABLE_TOPIC_SEGMENTATION: {cls.ENABLE_TOPIC_SEGMENTATION}")
         print(f"TOPIC_SIMILARITY_THRESHOLD: {cls.TOPIC_SIMILARITY_THRESHOLD}")
         print(f"MIN_TOPIC_SENTENCES: {cls.MIN_TOPIC_SENTENCES}")

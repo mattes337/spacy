@@ -98,27 +98,67 @@ python __test__/test_app.py
 ### Starting the Transcription Service
 
 ```bash
-# Production version (requires ML dependencies)
+# Production version with async processing (recommended)
+python start_async_service.py
+
+# Original synchronous version
 python app.py
 
 # Test version (mock processing)
 python __test__/test_app.py
 ```
 
-The service will start on `http://localhost:8000` and be ready to receive transcription requests from agents.
+The service will start on `http://localhost:8000` and be ready to receive transcription requests.
 
-### API Endpoints for Agent Integration
+### Asynchronous Processing (NEW!)
 
-#### Transcribe Audio File
+The service now supports asynchronous processing for large files (multiple GBs) without timeouts:
+
 ```bash
+# Submit file for async processing
+curl -X POST "http://localhost:8000/process" \
+  -F "file=@large_video.mp4" \
+  -G -d "language=en" \
+  -d "webhook_url=https://your-app.com/webhook"
+
+# Response: {"job_id": "uuid", "status": "pending", ...}
+
+# Check job status
+curl "http://localhost:8000/status/{job_id}"
+
+# Get result when completed
+curl "http://localhost:8000/result/{job_id}"
+```
+
+### API Endpoints
+
+#### Asynchronous Processing (Recommended)
+```bash
+# Submit file for processing (returns immediately with job ID)
+curl -X POST "http://localhost:8000/process" \
+     -F "file=@your_file.mp4" \
+     -G -d "language=en" \
+     -d "webhook_url=https://your-app.com/webhook"
+
+# Check job status
+curl "http://localhost:8000/status/{job_id}"
+
+# Get job result
+curl "http://localhost:8000/result/{job_id}"
+
+# Check processing status
+curl "http://localhost:8000/jobs/processing"
+```
+
+#### Synchronous Processing (Legacy)
+```bash
+# Transcribe Audio File (may timeout on large files)
 curl -X POST "http://localhost:8000/process-audio" \
      -H "accept: application/json" \
      -H "Content-Type: multipart/form-data" \
      -F "file=@your_audio.wav"
-```
 
-#### Transcribe Video File (extracts audio first)
-```bash
+# Transcribe Video File (may timeout on large files)
 curl -X POST "http://localhost:8000/process-video" \
      -H "accept: application/json" \
      -H "Content-Type: multipart/form-data" \
@@ -330,6 +370,69 @@ See `TASKS.md` for detailed development tasks and priorities.
    - Verify model files are accessible
 
 4. **Large audio/video file processing fails**
-   - Implement chunking for large files (see TASKS.md)
-   - Increase timeout settings for agent requests
-   - Monitor memory usage during transcription
+   - ✅ **SOLVED**: Use async processing endpoints for large files
+   - Use `/process` endpoint instead of `/process-audio` or `/process-video`
+   - Monitor job status with `/status/{job_id}` endpoint
+   - Set up webhook notifications for completion
+
+## 🆕 Asynchronous Processing Features
+
+### Key Benefits
+- **No timeouts**: Process files of any size (multiple GBs)
+- **Immediate response**: Get job ID instantly, check status later
+- **Webhook notifications**: Get notified when processing completes
+- **Progress tracking**: Monitor processing progress in real-time
+- **Background processing**: Service remains responsive during processing
+
+### New Files and Components
+- `models.py`: SQLite database models for job tracking
+- `background_processor.py`: Async task processor with webhook support
+- `example_async_client.py`: Simple usage example
+- `ASYNC_API_GUIDE.md`: Complete API documentation
+- `ASYNC_IMPLEMENTATION_SUMMARY.md`: Technical details
+
+### Quick Start with Async Processing
+```bash
+# Install additional dependencies
+pip install sqlalchemy httpx
+
+# Start service (now includes async processing)
+python app.py
+
+# Test async processing
+python example_async_client.py
+```
+
+### Docker Deployment
+```bash
+# Use Docker Compose (now includes async processing)
+docker-compose up -d
+
+# Check logs
+docker-compose logs -f
+```
+
+### Migration from Sync to Async
+**Old (Synchronous):**
+```python
+response = requests.post("/process-audio", files={"file": audio_file})
+result = response.json()  # May timeout on large files
+```
+
+**New (Asynchronous):**
+```python
+# Submit job
+response = requests.post("/process", files={"file": audio_file})
+job_id = response.json()["job_id"]
+
+# Poll for result
+while True:
+    result = requests.get(f"/result/{job_id}")
+    if result.status_code == 200:
+        break  # Job completed
+    time.sleep(5)  # Wait and retry
+```
+
+For complete documentation, see:
+- `ASYNC_API_GUIDE.md` - API reference and usage examples
+- `ASYNC_IMPLEMENTATION_SUMMARY.md` - Technical details and troubleshooting
