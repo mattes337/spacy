@@ -54,6 +54,7 @@ class Config:
     SPEAKER_DIARIZATION_MODEL: str = os.getenv("SPEAKER_DIARIZATION_MODEL", "pyannote/speaker-diarization-3.1")
     MIN_SPEAKERS: int = int(os.getenv("MIN_SPEAKERS", "1"))
     MAX_SPEAKERS: int = int(os.getenv("MAX_SPEAKERS", "10"))
+    HUGGINGFACE_TOKEN: str = os.getenv("HUGGINGFACE_TOKEN", "")
     
     @classmethod
     def get_max_file_size_bytes(cls) -> int:
@@ -113,6 +114,7 @@ class Config:
         print(f"SPEAKER_DIARIZATION_MODEL: {cls.SPEAKER_DIARIZATION_MODEL}")
         print(f"MIN_SPEAKERS: {cls.MIN_SPEAKERS}")
         print(f"MAX_SPEAKERS: {cls.MAX_SPEAKERS}")
+        print(f"HUGGINGFACE_TOKEN: {'Set' if cls.HUGGINGFACE_TOKEN else 'Not set'}")
         print("=" * 45)
 
 

@@ -250,8 +250,15 @@ curl -X POST "http://localhost:8000/process-audio" -F "file=@test_audio.wav"
 - `SPEAKER_DIARIZATION_MODEL`: Model for speaker diarization (default: pyannote/speaker-diarization-3.1)
 - `MIN_SPEAKERS`: Minimum number of speakers to detect (default: 1)
 - `MAX_SPEAKERS`: Maximum number of speakers to detect (default: 10)
+- `HUGGINGFACE_TOKEN`: Hugging Face authentication token (required for gated models)
 
 **Note:** Speaker diarization requires the `pyannote.audio` library. Each sentence in the output includes a speaker index to identify who spoke it.
+
+**Authentication Required:** The pyannote models are gated and require authentication:
+1. Visit [https://hf.co/pyannote/speaker-diarization-3.1](https://hf.co/pyannote/speaker-diarization-3.1) to accept user conditions
+2. Create a token at [https://hf.co/settings/tokens](https://hf.co/settings/tokens)
+3. Set the `HUGGINGFACE_TOKEN` environment variable
+4. Alternatively, disable speaker diarization with `ENABLE_SPEAKER_DIARIZATION=false`
 
 ## 🐳 Docker Deployment
 
@@ -362,3 +369,10 @@ See `TASKS.md` for detailed development tasks and priorities.
    - Implement chunking for large files (see TASKS.md)
    - Increase timeout settings for agent requests
    - Monitor memory usage during transcription
+
+5. **Speaker diarization not working**
+   - Check if pyannote.audio is installed: `pip install pyannote.audio`
+   - Verify Hugging Face token is set: `echo $HUGGINGFACE_TOKEN`
+   - Accept model conditions at https://hf.co/pyannote/speaker-diarization-3.1
+   - Disable speaker diarization if not needed: `ENABLE_SPEAKER_DIARIZATION=false`
+   - Check logs for authentication errors
