@@ -91,12 +91,16 @@ if config.ENABLE_SPEAKER_DIARIZATION and SPEAKER_DIARIZATION_AVAILABLE:
         logger.info("Speaker diarization model loaded successfully")
     except Exception as e:
         logger.warning(f"Failed to load speaker diarization model: {e}")
-        if "gated" in str(e).lower() or "private" in str(e).lower() or "authentication" in str(e).lower():
-            logger.warning("The model appears to be gated. Please:")
+        error_str = str(e).lower()
+        if ("gated" in error_str or "private" in error_str or "authentication" in error_str or
+            "segmentation-3.0" in error_str or "could not download" in error_str):
+            logger.warning("The pyannote models are gated and require authentication. Please:")
             logger.warning("1. Visit https://hf.co/pyannote/speaker-diarization-3.1 to accept user conditions")
-            logger.warning("2. Create a token at https://hf.co/settings/tokens")
-            logger.warning("3. Set HUGGINGFACE_TOKEN environment variable")
-            logger.warning("4. Or disable speaker diarization with ENABLE_SPEAKER_DIARIZATION=false")
+            logger.warning("2. Visit https://hf.co/pyannote/segmentation-3.0 to accept user conditions")
+            logger.warning("3. Create a token at https://hf.co/settings/tokens")
+            logger.warning("4. Set HUGGINGFACE_TOKEN environment variable in your .env file")
+            logger.warning("5. Restart the service")
+            logger.warning("6. Or disable speaker diarization with ENABLE_SPEAKER_DIARIZATION=false")
         logger.warning("Speaker diarization will be disabled - using single speaker fallback")
         speaker_pipeline = None
 elif config.ENABLE_SPEAKER_DIARIZATION and not SPEAKER_DIARIZATION_AVAILABLE:

@@ -254,11 +254,16 @@ curl -X POST "http://localhost:8000/process-audio" -F "file=@test_audio.wav"
 
 **Note:** Speaker diarization requires the `pyannote.audio` library. Each sentence in the output includes a speaker index to identify who spoke it.
 
-**Authentication Required:** The pyannote models are gated and require authentication:
+**⚠️ AUTHENTICATION REQUIRED:** The pyannote models are gated and require authentication:
+
+**Required Steps:**
 1. Visit [https://hf.co/pyannote/speaker-diarization-3.1](https://hf.co/pyannote/speaker-diarization-3.1) to accept user conditions
-2. Create a token at [https://hf.co/settings/tokens](https://hf.co/settings/tokens)
-3. Set the `HUGGINGFACE_TOKEN` environment variable
-4. Alternatively, disable speaker diarization with `ENABLE_SPEAKER_DIARIZATION=false`
+2. Visit [https://hf.co/pyannote/segmentation-3.0](https://hf.co/pyannote/segmentation-3.0) to accept user conditions
+3. Create a token at [https://hf.co/settings/tokens](https://hf.co/settings/tokens)
+4. Set the `HUGGINGFACE_TOKEN` environment variable in your `.env` file
+5. Restart the service
+
+**Alternative:** Disable speaker diarization with `ENABLE_SPEAKER_DIARIZATION=false` if authentication is not possible.
 
 ## 🐳 Docker Deployment
 
@@ -284,6 +289,16 @@ curl -X POST "http://localhost:8000/process-audio" -F "file=@test_audio.wav"
 
 ### Quick Start with Docker Compose
 
+**Step 1: Set up environment variables**
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Edit .env file and set your Hugging Face token
+# HUGGINGFACE_TOKEN=your_actual_token_here
+```
+
+**Step 2: Start the service**
 ```bash
 # Start basic service
 docker-compose up -d
@@ -291,7 +306,7 @@ docker-compose up -d
 # Check service health
 curl http://localhost:8000/health
 
-# View logs
+# View logs (check for authentication success)
 docker-compose logs -f
 
 # Stop service
@@ -370,9 +385,13 @@ See `TASKS.md` for detailed development tasks and priorities.
    - Increase timeout settings for agent requests
    - Monitor memory usage during transcription
 
-5. **Speaker diarization not working**
-   - Check if pyannote.audio is installed: `pip install pyannote.audio`
-   - Verify Hugging Face token is set: `echo $HUGGINGFACE_TOKEN`
-   - Accept model conditions at https://hf.co/pyannote/speaker-diarization-3.1
-   - Disable speaker diarization if not needed: `ENABLE_SPEAKER_DIARIZATION=false`
-   - Check logs for authentication errors
+5. **Speaker diarization authentication errors**
+   - **Error**: `Could not download 'pyannote/segmentation-3.0' model` or `'NoneType' object has no attribute 'eval'`
+   - **Solution**:
+     - Accept conditions at https://hf.co/pyannote/speaker-diarization-3.1
+     - Accept conditions at https://hf.co/pyannote/segmentation-3.0
+     - Create token at https://hf.co/settings/tokens
+     - Set `HUGGINGFACE_TOKEN=your_token_here` in `.env` file
+     - Restart Docker containers: `docker-compose down && docker-compose up -d`
+   - **Verify**: Check token is set: `echo $HUGGINGFACE_TOKEN`
+   - **Alternative**: Disable with `ENABLE_SPEAKER_DIARIZATION=false`

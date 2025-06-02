@@ -15,6 +15,10 @@ services:
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
       - DEBUG=${DEBUG:-false}
       - MAX_WORKERS=1
+      # Speaker diarization configuration
+      - ENABLE_SPEAKER_DIARIZATION=${ENABLE_SPEAKER_DIARIZATION:-true}
+      - SPEAKER_DIARIZATION_MODEL=${SPEAKER_DIARIZATION_MODEL:-pyannote/speaker-diarization-3.1}
+      - HUGGINGFACE_TOKEN=${HUGGINGFACE_TOKEN}
     volumes:
       - ./model-cache:/root/.cache
       - ./temp-files:/app/temp
