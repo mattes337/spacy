@@ -50,8 +50,19 @@ class MockTextProcessor:
             }
         }
 
-    def structure_text_with_spacy(self, text: str) -> Dict[str, Any]:
-        """Mock text structuring"""
+    def perform_speaker_diarization(self, audio_path: str) -> Dict[str, Any]:
+        """Mock speaker diarization"""
+        return {
+            "speakers": {"SPEAKER_00": 1, "SPEAKER_01": 2},
+            "speaker_segments": [
+                {"start": 0.0, "end": 15.0, "speaker": 1, "speaker_label": "SPEAKER_00"},
+                {"start": 15.0, "end": 30.0, "speaker": 2, "speaker_label": "SPEAKER_01"}
+            ],
+            "num_speakers": 2
+        }
+
+    def structure_text_with_spacy(self, text: str, whisper_segments: List[Dict] = None, speaker_segments: List[Dict] = None) -> Dict[str, Any]:
+        """Mock text structuring with speaker information"""
         words = text.split()
 
         # Mock topic segmentation - split text into 2-3 topics for testing
@@ -62,24 +73,24 @@ class MockTextProcessor:
                 {
                     "summary": "",
                     "seconds": 0.0,
-                    "sentences": ['. '.join(sentences[:mid]) + '.']
+                    "sentences": [{"speaker": 1, "text": '. '.join(sentences[:mid]) + '.'}]
                 },
                 {
                     "summary": "",
                     "seconds": 30.0,
-                    "sentences": ['. '.join(sentences[mid:]) + '.']
+                    "sentences": [{"speaker": 2, "text": '. '.join(sentences[mid:]) + '.'}]
                 }
             ]
         else:
             topics = [{
                 "summary": "",
                 "seconds": 0.0,
-                "sentences": [text]
+                "sentences": [{"speaker": 1, "text": text}]
             }]
 
         structured_data = {
             "raw_text": text,
-            "sentences": [text],  # Mock: treat entire text as one sentence
+            "sentences": [{"speaker": 1, "text": text}],  # Mock: treat entire text as one sentence with speaker
             "entities": [
                 {
                     "text": "mock",
@@ -105,7 +116,8 @@ class MockTextProcessor:
                 "sentences_count": 1,
                 "entities_count": 1,
                 "unique_entities": 1,
-                "topics_count": len(topics)
+                "topics_count": len(topics),
+                "speakers_count": 2
             }
         }
         return structured_data
@@ -134,12 +146,20 @@ async def process_audio(
         transcript = transcription_result["transcript"]
         language_info = transcription_result["language_info"]
 
-        # Mock structure with spaCy
-        structured_data = processor.structure_text_with_spacy(transcript)
+        # Mock speaker diarization
+        speaker_result = processor.perform_speaker_diarization(tmp_file.name)
+
+        # Mock structure with spaCy including speaker information
+        structured_data = processor.structure_text_with_spacy(
+            transcript,
+            transcription_result["whisper_result"]["segments"],
+            speaker_result["speaker_segments"]
+        )
         structured_data["source_type"] = "audio"
         structured_data["filename"] = file.filename
         structured_data["language_detection"] = language_info
         structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
+        structured_data["speaker_diarization"] = speaker_result
 
         return structured_data
 
@@ -176,12 +196,20 @@ async def process_video(
         transcript = transcription_result["transcript"]
         language_info = transcription_result["language_info"]
 
-        # Mock structure with spaCy
-        structured_data = processor.structure_text_with_spacy(transcript)
+        # Mock speaker diarization
+        speaker_result = processor.perform_speaker_diarization(audio_path)
+
+        # Mock structure with spaCy including speaker information
+        structured_data = processor.structure_text_with_spacy(
+            transcript,
+            transcription_result["whisper_result"]["segments"],
+            speaker_result["speaker_segments"]
+        )
         structured_data["source_type"] = "video"
         structured_data["filename"] = file.filename
         structured_data["language_detection"] = language_info
         structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
+        structured_data["speaker_diarization"] = speaker_result
 
         return structured_data
 

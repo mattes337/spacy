@@ -10,33 +10,33 @@ import json
 def test_new_topic_format():
     """Test the new topic format structure"""
     
-    # Sample mock data that matches the new format
+    # Sample mock data that matches the new format with speaker information
     sample_topics = [
         {
             "summary": "",  # Will be filled by LLM later
             "seconds": 0.0,
             "sentences": [
-                "Today we're going to discuss artificial intelligence and its applications.",
-                "Machine learning has revolutionized many industries.",
-                "Deep learning models can process vast amounts of data efficiently."
+                {"speaker": 1, "text": "Today we're going to discuss artificial intelligence and its applications."},
+                {"speaker": 1, "text": "Machine learning has revolutionized many industries."},
+                {"speaker": 2, "text": "Deep learning models can process vast amounts of data efficiently."}
             ]
         },
         {
             "summary": "",  # Will be filled by LLM later
             "seconds": 45.2,
             "sentences": [
-                "Moving on to a different topic, let's talk about climate change.",
-                "Global warming is affecting weather patterns worldwide.",
-                "Renewable energy sources are becoming more important than ever."
+                {"speaker": 2, "text": "Moving on to a different topic, let's talk about climate change."},
+                {"speaker": 1, "text": "Global warming is affecting weather patterns worldwide."},
+                {"speaker": 1, "text": "Renewable energy sources are becoming more important than ever."}
             ]
         },
         {
             "summary": "",  # Will be filled by LLM later
             "seconds": 120.8,
             "sentences": [
-                "Finally, I want to mention the importance of education.",
-                "Learning new skills is crucial in today's rapidly changing world.",
-                "Online education platforms have made knowledge more accessible."
+                {"speaker": 2, "text": "Finally, I want to mention the importance of education."},
+                {"speaker": 2, "text": "Learning new skills is crucial in today's rapidly changing world."},
+                {"speaker": 1, "text": "Online education platforms have made knowledge more accessible."}
             ]
         }
     ]
@@ -71,10 +71,26 @@ def test_new_topic_format():
             print(f"  ❌ Sentences should be list, got {type(topic['sentences'])}")
             return False
         
-        # Check sentences are strings
+        # Check sentences are objects with speaker and text
         for j, sentence in enumerate(topic["sentences"]):
-            if not isinstance(sentence, str):
-                print(f"  ❌ Sentence {j} should be string, got {type(sentence)}")
+            if not isinstance(sentence, dict):
+                print(f"  ❌ Sentence {j} should be dict, got {type(sentence)}")
+                return False
+
+            # Check required sentence fields
+            if "speaker" not in sentence:
+                print(f"  ❌ Sentence {j} missing 'speaker' field")
+                return False
+            if "text" not in sentence:
+                print(f"  ❌ Sentence {j} missing 'text' field")
+                return False
+
+            # Check data types
+            if not isinstance(sentence["speaker"], int):
+                print(f"  ❌ Sentence {j} speaker should be int, got {type(sentence['speaker'])}")
+                return False
+            if not isinstance(sentence["text"], str):
+                print(f"  ❌ Sentence {j} text should be string, got {type(sentence['text'])}")
                 return False
         
         print(f"  📊 Timing: {topic['seconds']} seconds")
@@ -99,7 +115,11 @@ def test_integration_format():
     
     full_response = {
         "raw_text": "Complete transcribed text...",
-        "sentences": ["Sentence 1", "Sentence 2", "Sentence 3"],
+        "sentences": [
+            {"speaker": 1, "text": "Sentence 1"},
+            {"speaker": 2, "text": "Sentence 2"},
+            {"speaker": 1, "text": "Sentence 3"}
+        ],
         "entities": [],
         "keywords": [],
         "noun_phrases": [],
@@ -107,12 +127,17 @@ def test_integration_format():
             {
                 "summary": "",
                 "seconds": 0.0,
-                "sentences": ["Sentence 1", "Sentence 2"]
+                "sentences": [
+                    {"speaker": 1, "text": "Sentence 1"},
+                    {"speaker": 2, "text": "Sentence 2"}
+                ]
             },
             {
                 "summary": "",
                 "seconds": 30.5,
-                "sentences": ["Sentence 3"]
+                "sentences": [
+                    {"speaker": 1, "text": "Sentence 3"}
+                ]
             }
         ],
         "summary_stats": {
@@ -120,7 +145,8 @@ def test_integration_format():
             "sentences_count": 3,
             "entities_count": 0,
             "unique_entities": 0,
-            "topics_count": 2
+            "topics_count": 2,
+            "speakers_count": 2
         },
         "source_type": "audio",
         "filename": "test.wav"

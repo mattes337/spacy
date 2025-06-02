@@ -10,3 +10,4 @@ uvicorn==0.34.2
 numpy==1.26.4
 python-multipart==0.0.20
 scikit-learn>=1.6.0
+pyannote.audio==3.1.1

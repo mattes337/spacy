@@ -15,6 +15,14 @@ from sklearn.metrics.pairwise import cosine_similarity
 
 from config import config
 
+# Speaker diarization imports
+try:
+    from pyannote.audio import Pipeline
+    SPEAKER_DIARIZATION_AVAILABLE = True
+except ImportError:
+    SPEAKER_DIARIZATION_AVAILABLE = False
+    Pipeline = None
+
 # Setup logging
 logging.basicConfig(
     level=getattr(logging, config.LOG_LEVEL),
@@ -63,6 +71,21 @@ try:
 except Exception as e:
     logger.error(f"Failed to load Whisper model {config.WHISPER_MODEL}: {e}")
     raise
+
+# Load speaker diarization model
+speaker_pipeline = None
+if config.ENABLE_SPEAKER_DIARIZATION and SPEAKER_DIARIZATION_AVAILABLE:
+    logger.info(f"Loading speaker diarization model: {config.SPEAKER_DIARIZATION_MODEL}")
+    try:
+        speaker_pipeline = Pipeline.from_pretrained(config.SPEAKER_DIARIZATION_MODEL)
+        logger.info("Speaker diarization model loaded successfully")
+    except Exception as e:
+        logger.warning(f"Failed to load speaker diarization model: {e}")
+        logger.warning("Speaker diarization will be disabled")
+        speaker_pipeline = None
+elif config.ENABLE_SPEAKER_DIARIZATION and not SPEAKER_DIARIZATION_AVAILABLE:
+    logger.warning("Speaker diarization enabled but pyannote.audio not available")
+    logger.warning("Install pyannote.audio to enable speaker diarization")
 
 class TextProcessor:
     def __init__(self):
@@ -153,14 +176,101 @@ class TextProcessor:
                 detail=f"File size ({file_size} bytes) exceeds maximum allowed size ({config.MAX_FILE_SIZE})"
             )
 
-    def segment_text_by_topic_with_timing(self, text: str, whisper_segments: List[Dict]) -> List[Dict[str, Any]]:
+    def perform_speaker_diarization(self, audio_path: str) -> Dict[str, Any]:
+        """Perform speaker diarization on audio file"""
+        if not speaker_pipeline:
+            logger.warning("Speaker diarization not available, using single speaker")
+            return {
+                "speakers": {"SPEAKER_00": 1},
+                "speaker_segments": [],
+                "num_speakers": 1
+            }
+
+        try:
+            logger.info("Performing speaker diarization...")
+
+            # Apply the pipeline to the audio file
+            diarization = speaker_pipeline(audio_path)
+
+            # Extract speaker information
+            speakers = {}
+            speaker_segments = []
+            speaker_counter = 1
+
+            for turn, _, speaker in diarization.itertracks(yield_label=True):
+                if speaker not in speakers:
+                    speakers[speaker] = speaker_counter
+                    speaker_counter += 1
+
+                speaker_segments.append({
+                    "start": float(turn.start),
+                    "end": float(turn.end),
+                    "speaker": speakers[speaker],
+                    "speaker_label": speaker
+                })
+
+            logger.info(f"Speaker diarization completed: {len(speakers)} speakers identified")
+
+            return {
+                "speakers": speakers,
+                "speaker_segments": speaker_segments,
+                "num_speakers": len(speakers)
+            }
+
+        except Exception as e:
+            logger.error(f"Speaker diarization error: {str(e)}")
+            # Fallback to single speaker
+            return {
+                "speakers": {"SPEAKER_00": 1},
+                "speaker_segments": [],
+                "num_speakers": 1
+            }
+
+    def map_sentences_to_speakers(self, sentences: List, whisper_segments: List[Dict], speaker_segments: List[Dict]) -> List[Dict[str, Any]]:
+        """Map sentences to speakers based on timing information"""
+        sentence_speaker_mapping = []
+
+        # Get sentence timings first
+        sentence_timings = self._map_sentences_to_timing(sentences, whisper_segments)
+
+        for i, sentence in enumerate(sentences):
+            sentence_text = sentence.text.strip() if hasattr(sentence, 'text') else str(sentence).strip()
+            sentence_start_time = sentence_timings[i]
+
+            # Find the speaker for this sentence based on timing
+            assigned_speaker = 1  # Default speaker
+
+            for speaker_segment in speaker_segments:
+                # Check if sentence timing overlaps with speaker segment
+                if (sentence_start_time >= speaker_segment["start"] and
+                    sentence_start_time <= speaker_segment["end"]):
+                    assigned_speaker = speaker_segment["speaker"]
+                    break
+
+            sentence_speaker_mapping.append({
+                "speaker": assigned_speaker,
+                "text": sentence_text
+            })
+
+        return sentence_speaker_mapping
+
+    def segment_text_by_topic_with_timing(self, text: str, whisper_segments: List[Dict], speaker_segments: List[Dict] = None) -> List[Dict[str, Any]]:
         """Segment text into topics with timing information and summaries"""
         if not config.ENABLE_TOPIC_SEGMENTATION:
             # Return single topic with all content
+            doc = nlp(text)
+            sentences = list(doc.sents)
+
+            # Map sentences to speakers if speaker segments available
+            if speaker_segments:
+                sentence_objects = self.map_sentences_to_speakers(sentences, whisper_segments, speaker_segments)
+            else:
+                sentence_objects = [{"speaker": 1, "text": sent.text.strip()} for sent in sentences]
+
             return [{
                 "summary": "",  # Will be filled by LLM later
                 "seconds": 0.0,
-                "sentences": [text] if text.strip() else []
+                "sentences": sentence_objects if sentence_objects else []
             }]
 
         try:
@@ -169,10 +279,16 @@ class TextProcessor:
 
             # If we have fewer sentences than minimum, return as single topic
             if len(sentences) < config.MIN_TOPIC_SENTENCES:
+                # Map sentences to speakers if speaker segments available
+                if speaker_segments:
+                    sentence_objects = self.map_sentences_to_speakers(sentences, whisper_segments, speaker_segments)
+                else:
+                    sentence_objects = [{"speaker": 1, "text": sent.text.strip()} for sent in sentences]
+
                 return [{
                     "summary": "",  # Will be filled by LLM later
                     "seconds": 0.0,
-                    "sentences": [sent.text.strip() for sent in sentences]
+                    "sentences": sentence_objects
                 }]
 
             # Map sentences to timing information from Whisper segments
@@ -181,7 +297,7 @@ class TextProcessor:
             # Check if the spaCy model has word vectors
             if not nlp.meta.get('vectors', {}).get('keys', 0):
                 logger.warning("spaCy model doesn't have word vectors. Using fallback topic segmentation.")
-                return self._fallback_topic_segmentation_with_timing(sentences, sentence_timings)
+                return self._fallback_topic_segmentation_with_timing(sentences, sentence_timings, speaker_segments, whisper_segments)
 
             # Calculate sentence embeddings using spaCy
             sentence_vectors = []
@@ -195,10 +311,16 @@ class TextProcessor:
                     valid_timings.append(sentence_timings[i])
 
             if len(sentence_vectors) < 2:
+                # Map sentences to speakers if speaker segments available
+                if speaker_segments:
+                    sentence_objects = self.map_sentences_to_speakers(sentences, whisper_segments, speaker_segments)
+                else:
+                    sentence_objects = [{"speaker": 1, "text": sent.text.strip()} for sent in sentences]
+
                 return [{
                     "summary": "",  # Will be filled by LLM later
                     "seconds": 0.0,
-                    "sentences": [sent.text.strip() for sent in sentences]
+                    "sentences": sentence_objects
                 }]
 
             # Convert to numpy array for sklearn
@@ -255,16 +377,19 @@ class TextProcessor:
                     "start_time": 0.0
                 }]
 
-            # Convert to final format with summaries
+            # Convert to final format with summaries and speaker information
             topics = []
             for segment in topic_segments:
-                sentences_text = [sent.text.strip() for sent in segment["sentences"]]
-                topic_text = " ".join(sentences_text)
+                # Map sentences to speakers for this segment
+                if speaker_segments:
+                    sentence_objects = self.map_sentences_to_speakers(segment["sentences"], whisper_segments, speaker_segments)
+                else:
+                    sentence_objects = [{"speaker": 1, "text": sent.text.strip()} for sent in segment["sentences"]]
 
                 topics.append({
                     "summary": "",  # Will be filled by LLM later
                     "seconds": float(segment["start_time"]),
-                    "sentences": sentences_text
+                    "sentences": sentence_objects
                 })
 
             logger.info(f"Topic segmentation completed: {len(topics)} topics identified")
@@ -272,10 +397,19 @@ class TextProcessor:
 
         except Exception as e:
             logger.error(f"Topic segmentation error: {str(e)}")
+            # Fallback to single topic with speaker information
+            doc = nlp(text)
+            sentences = list(doc.sents)
+
+            if speaker_segments:
+                sentence_objects = self.map_sentences_to_speakers(sentences, whisper_segments, speaker_segments)
+            else:
+                sentence_objects = [{"speaker": 1, "text": text}] if text.strip() else []
+
             return [{
                 "summary": "",  # Will be filled by LLM later
                 "seconds": 0.0,
-                "sentences": [text] if text.strip() else []
+                "sentences": sentence_objects
             }]
 
     def _map_sentences_to_timing(self, sentences: List, whisper_segments: List[Dict]) -> List[float]:
@@ -307,7 +441,7 @@ class TextProcessor:
 
         return sentence_timings
 
-    def _fallback_topic_segmentation_with_timing(self, sentences: List, sentence_timings: List[float]) -> List[Dict[str, Any]]:
+    def _fallback_topic_segmentation_with_timing(self, sentences: List, sentence_timings: List[float], speaker_segments: List[Dict] = None, whisper_segments: List[Dict] = None) -> List[Dict[str, Any]]:
         """Fallback topic segmentation with timing information"""
         chunk_size = max(config.MIN_TOPIC_SENTENCES, len(sentences) // 3)
         topics = []
@@ -316,20 +450,34 @@ class TextProcessor:
             chunk = sentences[i:i + chunk_size]
             chunk_timings = sentence_timings[i:i + chunk_size]
 
-            sentences_text = [sent.text.strip() for sent in chunk]
+            # Map sentences to speakers for this chunk
+            if speaker_segments and whisper_segments:
+                sentence_objects = self.map_sentences_to_speakers(chunk, whisper_segments, speaker_segments)
+            else:
+                sentence_objects = [{"speaker": 1, "text": sent.text.strip()} for sent in chunk]
+
             start_time = chunk_timings[0] if chunk_timings else 0.0
 
             topics.append({
                 "summary": "",  # Will be filled by LLM later
                 "seconds": float(start_time),
-                "sentences": sentences_text
+                "sentences": sentence_objects
             })
 
-        return topics if topics else [{
-            "summary": "",  # Will be filled by LLM later
-            "seconds": 0.0,
-            "sentences": [sent.text.strip() for sent in sentences]
-        }]
+        if not topics:
+            # Fallback case
+            if speaker_segments and whisper_segments:
+                sentence_objects = self.map_sentences_to_speakers(sentences, whisper_segments, speaker_segments)
+            else:
+                sentence_objects = [{"speaker": 1, "text": sent.text.strip()} for sent in sentences]
+
+            return [{
+                "summary": "",  # Will be filled by LLM later
+                "seconds": 0.0,
+                "sentences": sentence_objects
+            }]
+
+        return topics
 
     def _fallback_topic_segmentation(self, sentences: List) -> List[str]:
         """Fallback topic segmentation based on sentence count"""
@@ -343,14 +491,22 @@ class TextProcessor:
 
         return segments if segments else [" ".join([sent.text.strip() for sent in sentences])]
 
-    def structure_text_with_spacy(self, text: str, whisper_segments: List[Dict] = None) -> Dict[str, Any]:
+    def structure_text_with_spacy(self, text: str, whisper_segments: List[Dict] = None, speaker_segments: List[Dict] = None) -> Dict[str, Any]:
         """Process text with spaCy for structured extraction"""
         doc = nlp(text)
 
         # Extract structured information
+        sentences = list(doc.sents)
+
+        # Map sentences to speakers if speaker segments available
+        if speaker_segments:
+            sentence_objects = self.map_sentences_to_speakers(sentences, whisper_segments or [], speaker_segments)
+        else:
+            sentence_objects = [{"speaker": 1, "text": sent.text.strip()} for sent in sentences]
+
         structured_data = {
             "raw_text": text,
-            "sentences": [sent.text.strip() for sent in doc.sents],
+            "sentences": sentence_objects,
             "entities": [
                 {
                     "text": ent.text,
@@ -380,13 +536,20 @@ class TextProcessor:
             }
         }
 
-        # Add topic segmentation with timing
+        # Add topic segmentation with timing and speaker information
         if whisper_segments is None:
             whisper_segments = []
 
-        topics = self.segment_text_by_topic_with_timing(text, whisper_segments)
+        topics = self.segment_text_by_topic_with_timing(text, whisper_segments, speaker_segments)
         structured_data["topics"] = topics
         structured_data["summary_stats"]["topics_count"] = len(topics)
+
+        # Add speaker information to summary stats
+        if speaker_segments:
+            unique_speakers = set(seg["speaker"] for seg in speaker_segments)
+            structured_data["summary_stats"]["speakers_count"] = len(unique_speakers)
+        else:
+            structured_data["summary_stats"]["speakers_count"] = 1
 
         return structured_data
 
@@ -428,16 +591,25 @@ async def process_audio(
         transcript = transcription_result["transcript"]
         language_info = transcription_result["language_info"]
 
-        # Structure with spaCy
-        structured_data = processor.structure_text_with_spacy(transcript, transcription_result["whisper_result"]["segments"])
+        # Perform speaker diarization
+        speaker_result = processor.perform_speaker_diarization(tmp_file.name)
+
+        # Structure with spaCy including speaker information
+        structured_data = processor.structure_text_with_spacy(
+            transcript,
+            transcription_result["whisper_result"]["segments"],
+            speaker_result["speaker_segments"]
+        )
         structured_data["source_type"] = "audio"
         structured_data["filename"] = file.filename
         structured_data["file_size"] = len(content)
         structured_data["language_detection"] = language_info
         structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
+        structured_data["speaker_diarization"] = speaker_result
         structured_data["models_used"] = {
             "whisper": config.WHISPER_MODEL,
-            "spacy": config.SPACY_MODEL
+            "spacy": config.SPACY_MODEL,
+            "speaker_diarization": config.SPEAKER_DIARIZATION_MODEL if speaker_pipeline else "disabled"
         }
 
         logger.info(f"Audio processing completed for: {file.filename}")
@@ -490,16 +662,25 @@ async def process_video(
         transcript = transcription_result["transcript"]
         language_info = transcription_result["language_info"]
 
-        # Structure with spaCy
-        structured_data = processor.structure_text_with_spacy(transcript, transcription_result["whisper_result"]["segments"])
+        # Perform speaker diarization on extracted audio
+        speaker_result = processor.perform_speaker_diarization(audio_path)
+
+        # Structure with spaCy including speaker information
+        structured_data = processor.structure_text_with_spacy(
+            transcript,
+            transcription_result["whisper_result"]["segments"],
+            speaker_result["speaker_segments"]
+        )
         structured_data["source_type"] = "video"
         structured_data["filename"] = file.filename
         structured_data["file_size"] = len(content)
         structured_data["language_detection"] = language_info
         structured_data["whisper_segments"] = transcription_result["whisper_result"]["segments"]
+        structured_data["speaker_diarization"] = speaker_result
         structured_data["models_used"] = {
             "whisper": config.WHISPER_MODEL,
-            "spacy": config.SPACY_MODEL
+            "spacy": config.SPACY_MODEL,
+            "speaker_diarization": config.SPEAKER_DIARIZATION_MODEL if speaker_pipeline else "disabled"
         }
 
         logger.info(f"Video processing completed for: {file.filename}")
@@ -611,6 +792,13 @@ async def get_config():
             "enabled": config.ENABLE_TOPIC_SEGMENTATION,
             "similarity_threshold": config.TOPIC_SIMILARITY_THRESHOLD,
             "min_topic_sentences": config.MIN_TOPIC_SENTENCES
+        },
+        "speaker_diarization": {
+            "enabled": config.ENABLE_SPEAKER_DIARIZATION,
+            "model": config.SPEAKER_DIARIZATION_MODEL,
+            "min_speakers": config.MIN_SPEAKERS,
+            "max_speakers": config.MAX_SPEAKERS,
+            "available": speaker_pipeline is not None
         }
     }
 

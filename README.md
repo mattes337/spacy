@@ -137,7 +137,11 @@ The service returns comprehensive structured data that agents can easily process
 ```json
 {
   "raw_text": "Complete transcribed text from audio/video",
-  "sentences": ["Sentence 1", "Sentence 2", "..."],
+  "sentences": [
+    {"speaker": 1, "text": "Sentence 1"},
+    {"speaker": 2, "text": "Sentence 2"},
+    {"speaker": 1, "text": "..."}
+  ],
   "entities": [
     {
       "text": "Entity text",
@@ -160,17 +164,25 @@ The service returns comprehensive structured data that agents can easily process
     {
       "summary": "",
       "seconds": 0.0,
-      "sentences": ["First sentence of topic.", "Second sentence of topic."]
+      "sentences": [
+        {"speaker": 1, "text": "First sentence of topic."},
+        {"speaker": 1, "text": "Second sentence of topic."}
+      ]
     },
     {
       "summary": "",
       "seconds": 45.2,
-      "sentences": ["First sentence of second topic.", "Another sentence."]
+      "sentences": [
+        {"speaker": 2, "text": "First sentence of second topic."},
+        {"speaker": 1, "text": "Another sentence."}
+      ]
     },
     {
       "summary": "",
       "seconds": 120.8,
-      "sentences": ["Final topic sentences here."]
+      "sentences": [
+        {"speaker": 2, "text": "Final topic sentences here."}
+      ]
     }
   ],
   "summary_stats": {
@@ -178,7 +190,16 @@ The service returns comprehensive structured data that agents can easily process
     "sentences_count": 2,
     "entities_count": 1,
     "unique_entities": 1,
-    "topics_count": 3
+    "topics_count": 3,
+    "speakers_count": 2
+  },
+  "speaker_diarization": {
+    "speakers": {"SPEAKER_00": 1, "SPEAKER_01": 2},
+    "speaker_segments": [
+      {"start": 0.0, "end": 45.2, "speaker": 1, "speaker_label": "SPEAKER_00"},
+      {"start": 45.2, "end": 120.8, "speaker": 2, "speaker_label": "SPEAKER_01"}
+    ],
+    "num_speakers": 2
   },
   "source_type": "audio",
   "filename": "your_audio.wav"
@@ -223,6 +244,14 @@ curl -X POST "http://localhost:8000/process-audio" -F "file=@test_audio.wav"
 - `MIN_TOPIC_SENTENCES`: Minimum sentences per topic (default: 2)
 
 **Note:** For optimal topic segmentation, use spaCy models with word vectors like `en_core_web_md` or `en_core_web_lg` instead of `en_core_web_sm`.
+
+#### Speaker Diarization Configuration
+- `ENABLE_SPEAKER_DIARIZATION`: Enable/disable speaker diarization (default: true)
+- `SPEAKER_DIARIZATION_MODEL`: Model for speaker diarization (default: pyannote/speaker-diarization-3.1)
+- `MIN_SPEAKERS`: Minimum number of speakers to detect (default: 1)
+- `MAX_SPEAKERS`: Maximum number of speakers to detect (default: 10)
+
+**Note:** Speaker diarization requires the `pyannote.audio` library. Each sentence in the output includes a speaker index to identify who spoke it.
 
 ## 🐳 Docker Deployment
 
